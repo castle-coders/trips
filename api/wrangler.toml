@@ -13,5 +13,5 @@ CF_ACCESS_AUDIENCE = "3af39f6c701b3903969a5b09993f6994dcbaff170711173d037e2bcb95
 [[d1_databases]]
 binding = "DB"
 database_name = "trips-db"
-database_id = "LOCAL"
+database_id = "PROD_DB_ID_PLACEHOLDER"
 migrations_dir = "drizzle"
