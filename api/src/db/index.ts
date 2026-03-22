@@ -13,8 +13,8 @@ export type Env = {
     DB: D1Database;
     CF_ACCESS_TEAM_DOMAIN: string;
     CF_ACCESS_AUDIENCE: string;
-    JWT_SECRET: string;
-    GOOGLE_CLIENT_ID: string;
+    BOOTSTRAP_ADMIN_EMAIL?: string;
+    DEV_MODE?: string;
   };
   Variables: {
     user: AuthUser;

@@ -1,125 +1,81 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
+import { DEV_EMAIL_KEY, account } from "./api";
+
+const CF_LOGOUT_URL = "https://trips-api.prenticew.com/cdn-cgi/access/logout";
 
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
   role: string;
-  hasPassword?: boolean;
-  hasGoogle?: boolean;
   avatarUrl?: string | null;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
-  token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
-  loginWithGoogle: (credential: string) => Promise<void>;
+  devLoginPending: boolean;
+  devLoginError: string;
+  devLogin: (email: string) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>(null!);
 
-const TOKEN_KEY = "trips_token";
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem(TOKEN_KEY)
-  );
   const [loading, setLoading] = useState(true);
 
-  const saveToken = (t: string) => {
-    localStorage.setItem(TOKEN_KEY, t);
-    setToken(t);
-  };
+  // In dev, show the login form if no email is stored yet
+  const [devLoginPending, setDevLoginPending] = useState(
+    () => import.meta.env.DEV && !localStorage.getItem(DEV_EMAIL_KEY)
+  );
+  const [devLoginError, setDevLoginError] = useState("");
 
-  const clearToken = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
-    setUser(null);
-  };
-
-  // Fetch current user on mount / token change
   const fetchMe = useCallback(async () => {
-    if (!token) {
+    if (import.meta.env.DEV && !localStorage.getItem(DEV_EMAIL_KEY)) {
       setLoading(false);
       return;
     }
     try {
-      const res = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        clearToken();
-        return;
-      }
-      const data = await res.json();
-      setUser(data);
+      setUser(await account.getMe());
     } catch {
-      clearToken();
+      setUser(null);
+      if (import.meta.env.DEV) {
+        localStorage.removeItem(DEV_EMAIL_KEY);
+        setDevLoginError("Sign-in failed — is the API running with DEV_MODE=true?");
+        setDevLoginPending(true);
+      }
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     fetchMe();
   }, [fetchMe]);
 
-  const login = async (email: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || "Login failed");
-    }
-    const data = await res.json();
-    saveToken(data.token);
-    setUser(data.user);
-  };
+  const devLogin = useCallback((email: string) => {
+    localStorage.setItem(DEV_EMAIL_KEY, email);
+    setDevLoginError("");
+    setDevLoginPending(false);
+    fetchMe();
+  }, [fetchMe]);
 
-  const register = async (email: string, password: string, name: string) => {
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || "Registration failed");
+  const logout = () => {
+    if (import.meta.env.DEV) {
+      localStorage.removeItem(DEV_EMAIL_KEY);
+      setUser(null);
+      setDevLoginPending(true);
+      return;
     }
-    const data = await res.json();
-    saveToken(data.token);
-    setUser(data.user);
-  };
-
-  const loginWithGoogle = async (credential: string) => {
-    const res = await fetch("/api/auth/google", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || "Google sign-in failed");
-    }
-    const data = await res.json();
-    saveToken(data.token);
-    setUser(data.user);
+    window.location.href = CF_LOGOUT_URL;
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, token, loading, login, register, loginWithGoogle, logout: clearToken, refreshUser: fetchMe }}
-    >
+    <AuthContext.Provider value={{ user, loading, devLoginPending, devLoginError, devLogin, logout, refreshUser: fetchMe }}>
       {children}
     </AuthContext.Provider>
   );

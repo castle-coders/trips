@@ -1,0 +1,4 @@
+# Copy to .dev.vars.local to add secrets for local development.
+# .dev.vars is committed and sets DEV_MODE=true automatically.
+# Example:
+# SOME_SECRET=value

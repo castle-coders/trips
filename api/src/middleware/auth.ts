@@ -5,7 +5,6 @@ import type { Env, AuthUser } from "../db";
 import { getDb } from "../db";
 import { users, serviceIdentities } from "../db/schema";
 
-// Cache JWKS keyset per team domain
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 function getJWKS(teamDomain: string) {
@@ -16,14 +15,12 @@ function getJWKS(teamDomain: string) {
   return jwksCache.get(teamDomain)!;
 }
 
-/**
- * Verify CF Access JWT and resolve to app user via service_identities mapping.
- */
 async function authenticateCFAccess(
   jwt: string,
   teamDomain: string,
   audienceTag: string,
-  db: ReturnType<typeof getDb>
+  db: ReturnType<typeof getDb>,
+  bootstrapAdminEmail?: string
 ): Promise<AuthUser | null> {
   try {
     const jwks = getJWKS(teamDomain);
@@ -35,8 +32,8 @@ async function authenticateCFAccess(
     const subject = payload.sub;
     if (!subject) return null;
 
-    // Look up service identity → user mapping
-    const rows = await db
+    // 1. Check service identity mapping (for CF Access service tokens)
+    const serviceRows = await db
       .select({
         userId: serviceIdentities.userId,
         userName: users.name,
@@ -48,62 +45,80 @@ async function authenticateCFAccess(
       .where(eq(serviceIdentities.cfAccessSubject, subject))
       .limit(1);
 
-    if (!rows.length) return null;
+    if (serviceRows.length) {
+      return {
+        id: serviceRows[0].userId,
+        email: serviceRows[0].userEmail,
+        name: serviceRows[0].userName,
+        role: serviceRows[0].userRole,
+      };
+    }
 
-    return {
-      id: rows[0].userId,
-      email: rows[0].userEmail,
-      name: rows[0].userName,
-      role: rows[0].userRole,
-    };
+    // 2. Human user — look up by email, auto-create if first login
+    const email = payload.email as string | undefined;
+    if (!email) return null;
+
+    const userRows = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (userRows.length) {
+      return {
+        id: userRows[0].id,
+        email: userRows[0].email,
+        name: userRows[0].name,
+        role: userRows[0].role,
+      };
+    }
+
+    // First login — provision the user
+    const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
+    const anyUser = await db.select({ id: users.id }).from(users).limit(1);
+    const role = isBootstrapAdmin || anyUser.length === 0 ? "admin" : "viewer";
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const name = (payload.name as string | undefined) || email.split("@")[0];
+
+    await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
+
+    return { id, email, name, role };
   } catch {
     return null;
   }
 }
 
-/**
- * Verify app-issued JWT (for frontend users).
- */
-async function authenticateAppToken(
-  token: string,
-  secret: string,
-  db: ReturnType<typeof getDb>
+async function authenticateDevUser(
+  email: string,
+  db: ReturnType<typeof getDb>,
+  bootstrapAdminEmail?: string
 ): Promise<AuthUser | null> {
-  try {
-    const key = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, key);
-    const userId = payload.sub;
-    if (!userId) return null;
-
-    const rows = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!rows.length) return null;
-
-    return {
-      id: rows[0].id,
-      email: rows[0].email,
-      name: rows[0].name,
-      role: rows[0].role,
-    };
-  } catch {
-    return null;
+  const userRows = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (userRows.length) {
+    return { id: userRows[0].id, email: userRows[0].email, name: userRows[0].name, role: userRows[0].role };
   }
+  const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
+  const anyUser = await db.select({ id: users.id }).from(users).limit(1);
+  const role = isBootstrapAdmin || anyUser.length === 0 ? "admin" : "viewer";
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const name = email.split("@")[0];
+  await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
+  return { id, email, name, role };
 }
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
 
-  // 1. Try CF Access JWT (service tokens)
-  const cfJwt = c.req.header("CF-Access-Jwt-Assertion");
+  const cfJwt = c.req.header("Cf-Access-Jwt-Assertion");
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
     const user = await authenticateCFAccess(
       cfJwt,
       c.env.CF_ACCESS_TEAM_DOMAIN,
       c.env.CF_ACCESS_AUDIENCE,
-      db
+      db,
+      c.env.BOOTSTRAP_ADMIN_EMAIL
     );
     if (user) {
       c.set("user", user);
@@ -111,23 +126,17 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     }
   }
 
-  // 2. Try app Bearer token (frontend users)
-  const authHeader = c.req.header("Authorization");
-  if (authHeader?.startsWith("Bearer ") && c.env.JWT_SECRET) {
-    const token = authHeader.slice(7);
-    const user = await authenticateAppToken(token, c.env.JWT_SECRET, db);
-    if (user) {
-      c.set("user", user);
-      return next();
+  // Dev-only bypass: accept X-Dev-User-Email header when DEV_MODE is set
+  if (c.env.DEV_MODE) {
+    const devEmail = c.req.header("X-Dev-User-Email");
+    if (devEmail) {
+      const user = await authenticateDevUser(devEmail, db, c.env.BOOTSTRAP_ADMIN_EMAIL);
+      if (user) {
+        c.set("user", user);
+        return next();
+      }
     }
   }
 
   return c.json({ error: "Unauthorized" }, 401);
-});
-
-/**
- * Middleware that skips auth — used for public routes like /auth/login.
- */
-export const publicRoute = createMiddleware<Env>(async (_c, next) => {
-  await next();
 });

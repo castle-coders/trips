@@ -37,10 +37,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
-          command: deploy
-          secrets: |
-            JWT_SECRET
-            GOOGLE_CLIENT_ID
-        env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}

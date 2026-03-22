@@ -4,4 +4,4 @@ build/
 .wrangler/
 coverage/
 .env
-.dev.vars
+.dev.vars.local

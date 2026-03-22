@@ -1,26 +1,26 @@
 import type { Trip, Participant, Itinerary } from "./types";
 
 const BASE = import.meta.env.DEV ? "/api" : "https://trips-api.prenticew.com";
-const TOKEN_KEY = "trips_token";
+const CF_LOGIN_URL = "https://trips-api.prenticew.com/cdn-cgi/access/login";
 
-function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
+export const DEV_EMAIL_KEY = "dev_user_email";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
+  const devEmail = import.meta.env.DEV ? localStorage.getItem(DEV_EMAIL_KEY) : null;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(devEmail ? { "X-Dev-User-Email": devEmail } : {}),
       ...init?.headers,
     },
   });
   if (res.status === 204) return undefined as T;
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    window.location.href = "/login";
+    if (!import.meta.env.DEV) {
+      window.location.href = `${CF_LOGIN_URL}?redirect_url=${encodeURIComponent(window.location.href)}`;
+    }
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
@@ -37,18 +37,13 @@ export const trips = {
   create: (data: Partial<Trip>) =>
     request<Trip>("/trips", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<Trip>) =>
-    request<Trip>(`/trips/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    request<void>(`/trips/${id}`, { method: "DELETE" }),
+    request<Trip>(`/trips/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) => request<void>(`/trips/${id}`, { method: "DELETE" }),
 };
 
 // Participants
 export const participants = {
-  list: (tripId: string) =>
-    request<Participant[]>(`/trips/${tripId}/participants`),
+  list: (tripId: string) => request<Participant[]>(`/trips/${tripId}/participants`),
   create: (tripId: string, data: Partial<Participant>) =>
     request<Participant>(`/trips/${tripId}/participants`, {
       method: "POST",
@@ -58,10 +53,8 @@ export const participants = {
 
 // Itineraries
 export const itineraries = {
-  list: (tripId: string) =>
-    request<Itinerary[]>(`/trips/${tripId}/itineraries`),
-  get: (tripId: string, id: string) =>
-    request<Itinerary>(`/trips/${tripId}/itineraries/${id}`),
+  list: (tripId: string) => request<Itinerary[]>(`/trips/${tripId}/itineraries`),
+  get: (tripId: string, id: string) => request<Itinerary>(`/trips/${tripId}/itineraries/${id}`),
   create: (tripId: string, data: Partial<Itinerary>) =>
     request<Itinerary>(`/trips/${tripId}/itineraries`, {
       method: "POST",
@@ -82,30 +75,13 @@ export interface MeResponse {
   email: string;
   name: string;
   role: string;
-  hasPassword: boolean;
-  hasGoogle: boolean;
   avatarUrl: string | null;
 }
 
 export const account = {
   getMe: () => request<MeResponse>("/auth/me"),
-  updateProfile: (data: { name?: string; email?: string }) =>
-    request<MeResponse>("/auth/me", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  changePassword: (data: { currentPassword?: string; newPassword: string }) =>
-    request<{ ok: boolean }>("/auth/me/password", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  linkGoogle: (credential: string) =>
-    request<MeResponse>("/auth/me/link-google", {
-      method: "POST",
-      body: JSON.stringify({ credential }),
-    }),
-  unlinkGoogle: () =>
-    request<MeResponse>("/auth/me/link-google", { method: "DELETE" }),
+  updateProfile: (data: { name: string }) =>
+    request<MeResponse>("/auth/me", { method: "PUT", body: JSON.stringify(data) }),
 };
 
 // Users (authenticated, for pickers)
@@ -150,18 +126,12 @@ export const invitesApi = {
       body: JSON.stringify(data),
     }),
   revoke: (tripId: string, inviteId: string) =>
-    request<void>(`/trips/${tripId}/invites/${inviteId}`, {
-      method: "DELETE",
-    }),
-  // Public endpoints (no auth needed)
+    request<void>(`/trips/${tripId}/invites/${inviteId}`, { method: "DELETE" }),
   getInfo: (token: string) => request<InviteInfo>(`/auth/invite/${token}`),
-  accept: (
-    token: string,
-    body: { googleCredential?: string; password?: string; name?: string }
-  ) =>
-    request<{ token: string; user: { id: string; email: string; name: string; role: string } }>(
+  accept: (token: string) =>
+    request<{ user: { id: string; email: string; name: string; role: string } }>(
       `/auth/invite/${token}/accept`,
-      { method: "POST", body: JSON.stringify(body) }
+      { method: "POST" }
     ),
 };
 
@@ -187,31 +157,14 @@ export interface ServiceIdentity {
 
 export const admin = {
   listUsers: () => request<AppUser[]>("/admin/users"),
-  createUser: (data: {
-    email: string;
-    name: string;
-    password: string;
-    role?: string;
-  }) =>
-    request<AppUser>("/admin/users", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+  createUser: (data: { email: string; name: string; role?: string }) =>
+    request<AppUser>("/admin/users", { method: "POST", body: JSON.stringify(data) }),
   updateUser: (id: string, data: { name?: string; role?: string }) =>
-    request<AppUser>(`/admin/users/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  deleteUser: (id: string) =>
-    request<void>(`/admin/users/${id}`, { method: "DELETE" }),
+    request<AppUser>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteUser: (id: string) => request<void>(`/admin/users/${id}`, { method: "DELETE" }),
 
-  listServiceIdentities: () =>
-    request<ServiceIdentity[]>("/admin/service-identities"),
-  createServiceIdentity: (data: {
-    cfAccessSubject: string;
-    commonName: string;
-    userId: string;
-  }) =>
+  listServiceIdentities: () => request<ServiceIdentity[]>("/admin/service-identities"),
+  createServiceIdentity: (data: { cfAccessSubject: string; commonName: string; userId: string }) =>
     request<ServiceIdentity>("/admin/service-identities", {
       method: "POST",
       body: JSON.stringify(data),

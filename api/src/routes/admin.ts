@@ -2,7 +2,6 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, serviceIdentities } from "../db/schema";
-import { hashPassword } from "../lib/password";
 
 const app = new OpenAPIHono<Env>();
 
@@ -62,7 +61,6 @@ app.openapi(
               .object({
                 email: z.string().email(),
                 name: z.string().min(1),
-                password: z.string().min(8),
                 role: z.enum(["admin", "editor", "viewer"]).default("viewer"),
               })
               .openapi("CreateUser"),
@@ -92,13 +90,11 @@ app.openapi(
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const passwordHash = await hashPassword(body.password);
 
     await db.insert(users).values({
       id,
       email: body.email,
       name: body.name,
-      passwordHash,
       role: body.role,
       createdAt: now,
       updatedAt: now,
