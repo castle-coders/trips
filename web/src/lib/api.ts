@@ -1,6 +1,6 @@
 import type { Trip, Participant, Itinerary } from "./types";
 
-const BASE = "/api";
+const BASE = import.meta.env.DEV ? "/api" : "https://trips-api.prenticew.com";
 const TOKEN_KEY = "trips_token";
 
 function getToken(): string | null {

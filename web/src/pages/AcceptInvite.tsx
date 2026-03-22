@@ -1,13 +1,12 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { invitesApi, type InviteInfo } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { GoogleSignIn } from "../components/GoogleSignIn";
 
 export function AcceptInvite() {
   const { token } = useParams<{ token: string }>();
-  const navigate = useNavigate();
-  const { user, loginWithGoogle } = useAuth();
+  useAuth();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);

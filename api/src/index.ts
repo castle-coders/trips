@@ -13,7 +13,18 @@ import documentRoutes from "./routes/documents";
 import itineraryRoutes from "./routes/itineraries";
 import inviteRoutes from "./routes/invites";
 
+import { cors } from "hono/cors";
+
 const app = new OpenAPIHono<Env>();
+
+app.use("*", cors({
+  origin: ["http://localhost:5173", "https://trips.prenticew.com"],
+  allowHeaders: ["Content-Type", "Authorization", "CF-Access-Jwt-Assertion"],
+  allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
+  exposeHeaders: ["Content-Length"],
+  maxAge: 600,
+  credentials: true,
+}));
 
 // Public routes (no auth required)
 app.route("/auth", authRoutes);

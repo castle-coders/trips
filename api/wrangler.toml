@@ -2,11 +2,13 @@ name = "trips-api"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+routes = [
+  { pattern = "trips-api.prenticew.com", custom_domain = true }
+]
+
 [vars]
 CF_ACCESS_TEAM_DOMAIN = "pw10n.cloudflareaccess.com"
-CF_ACCESS_AUDIENCE = "YOUR_CF_ACCESS_AUDIENCE_TAG"
-JWT_SECRET = "dev-secret-change-in-production"
-GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+CF_ACCESS_AUDIENCE = "3af39f6c701b3903969a5b09993f6994dcbaff170711173d037e2bcb95c325f5"
 
 [[d1_databases]]
 binding = "DB"

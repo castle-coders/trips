@@ -179,7 +179,7 @@ interface Props {
   participants?: Participant[];
   onSave: (data: {
     type: ItineraryType;
-    status: string;
+    status: "Confirmed" | "Pending" | "Cancelled";
     content: Record<string, unknown>;
     confirmationNumber?: string;
     totalCost?: number;
@@ -191,7 +191,7 @@ interface Props {
 
 export function ItineraryForm({ initial, participants: tripParticipants, onSave, onClose }: Props) {
   const [type, setType] = useState<ItineraryType>(initial?.type || "Flight");
-  const [status, setStatus] = useState(initial?.status || "Pending");
+  const [status, setStatus] = useState<typeof STATUSES[number]>(initial?.status || "Pending");
   const [content, setContent] = useState<Record<string, string>>(
     (initial?.content as Record<string, string>) || {}
   );
@@ -395,7 +395,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
             <select
               className={inputClass}
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => setStatus(e.target.value as typeof STATUSES[number])}
             >
               {STATUSES.map((s) => (
                 <option key={s}>{s}</option>

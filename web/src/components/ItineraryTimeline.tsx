@@ -115,7 +115,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
       const rawLegs = cc.legs as Array<Record<string, string>> | undefined;
       const allLegs = [
         { airline: c.airline, flightNumber: c.flightNumber, departureAirport: c.departureAirport, departureTime: c.departureTime, departureTimeTz: (cc.departureTimeTz as string) || "", arrivalAirport: c.arrivalAirport, arrivalTime: c.arrivalTime, arrivalTimeTz: (cc.arrivalTimeTz as string) || "" },
-        ...(rawLegs || []).map((l) => ({ ...l, departureTimeTz: l.departureTimeTz || "", arrivalTimeTz: l.arrivalTimeTz || "" })),
+        ...(rawLegs || []).map((l) => ({ airline: l.airline || "", flightNumber: l.flightNumber || "", departureAirport: l.departureAirport || "", departureTime: l.departureTime || "", departureTimeTz: l.departureTimeTz || "", arrivalAirport: l.arrivalAirport || "", arrivalTime: l.arrivalTime || "", arrivalTimeTz: l.arrivalTimeTz || "" })),
       ];
       for (let li = 0; li < allLegs.length; li++) {
         const leg = allLegs[li];

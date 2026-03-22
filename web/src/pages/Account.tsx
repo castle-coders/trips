@@ -5,7 +5,7 @@ import { GoogleSignIn } from "../components/GoogleSignIn";
 import { Link } from "react-router-dom";
 
 export function Account() {
-  const { user, refreshUser } = useAuth();
+  const { refreshUser } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
