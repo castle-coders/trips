@@ -1,0 +1,15 @@
+name = "trips-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+CF_ACCESS_TEAM_DOMAIN = "pw10n.cloudflareaccess.com"
+CF_ACCESS_AUDIENCE = "YOUR_CF_ACCESS_AUDIENCE_TAG"
+JWT_SECRET = "dev-secret-change-in-production"
+GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trips-db"
+database_id = "LOCAL"
+migrations_dir = "drizzle"

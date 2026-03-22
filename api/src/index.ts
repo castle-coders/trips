@@ -1,0 +1,56 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
+import { apiReference } from "@scalar/hono-api-reference";
+import { authMiddleware } from "./middleware/auth";
+import { requireAdmin } from "./middleware/admin";
+import { requireTripEditor } from "./middleware/tripRole";
+import type { Env } from "./db";
+import authRoutes from "./routes/auth";
+import adminRoutes from "./routes/admin";
+import tripRoutes from "./routes/trips";
+import participantRoutes from "./routes/participants";
+import expenseRoutes from "./routes/expenses";
+import documentRoutes from "./routes/documents";
+import itineraryRoutes from "./routes/itineraries";
+import inviteRoutes from "./routes/invites";
+
+const app = new OpenAPIHono<Env>();
+
+// Public routes (no auth required)
+app.route("/auth", authRoutes);
+
+// OpenAPI spec + docs (public)
+app.doc("/openapi.json", {
+  openapi: "3.1.0",
+  info: {
+    title: "Trips API",
+    version: "1.0.0",
+    description: "Travel itinerary management API for Openclaw",
+  },
+});
+app.get(
+  "/docs",
+  apiReference({
+    url: "/openapi.json",
+  })
+);
+
+// Authenticated routes
+app.use("/trips/*", authMiddleware);
+app.use("/admin/*", authMiddleware);
+
+// Block viewers from write operations on trip resources
+app.use("/trips/*", requireTripEditor);
+
+// Admin-only routes
+app.use("/admin/*", requireAdmin);
+
+// Mount routes
+app.route("/trips", tripRoutes);
+app.route("/trips/:tripId/participants", participantRoutes);
+app.route("/trips/:tripId/expenses", expenseRoutes);
+app.route("/trips/:tripId/documents", documentRoutes);
+app.route("/trips/:tripId/itineraries", itineraryRoutes);
+app.route("/trips/:tripId/invites", inviteRoutes);
+app.route("/admin", adminRoutes);
+
+export default app;

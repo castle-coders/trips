@@ -1,0 +1,4 @@
+.claude/
+*.tar
+dev-accounts.md
+.DS_Store
