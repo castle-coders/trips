@@ -30,7 +30,8 @@ async function authenticateCFAccess(
       audience: audienceTag,
     });
 
-    const subject = payload.sub;
+    // For service tokens, CF Access sets sub to "" and uses common_name instead
+    const subject = (payload.sub as string) || (payload.common_name as string);
     if (!subject) return null;
 
     // 1. Check service identity mapping (for CF Access service tokens)
