@@ -1,9 +1,27 @@
 import type { Trip, Participant, Itinerary } from "./types";
 
 const BASE = import.meta.env.DEV ? "/api" : "https://trips-api.prenticew.com";
-const CF_LOGIN_URL = "https://trips-api.prenticew.com/cdn-cgi/access/login";
 
 export const DEV_EMAIL_KEY = "dev_user_email";
+
+// CF Access JWT fetched from the frontend's identity endpoint (production only)
+let cfAccessJwt: string | null = null;
+
+export function setCfAccessJwt(jwt: string | null) {
+  cfAccessJwt = jwt;
+}
+
+export async function refreshCfAccessJwt(): Promise<string | null> {
+  try {
+    const res = await fetch("/cdn-cgi/access/get-identity");
+    if (!res.ok) return null;
+    const data = await res.json();
+    cfAccessJwt = data.jwt ?? null;
+    return cfAccessJwt;
+  } catch {
+    return null;
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const devEmail = import.meta.env.DEV ? localStorage.getItem(DEV_EMAIL_KEY) : null;
@@ -12,6 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(cfAccessJwt ? { "Cf-Access-Jwt-Assertion": cfAccessJwt } : {}),
       ...(devEmail ? { "X-Dev-User-Email": devEmail } : {}),
       ...init?.headers,
     },
@@ -19,7 +38,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T;
   if (res.status === 401) {
     if (!import.meta.env.DEV) {
-      window.location.href = `${CF_LOGIN_URL}?redirect_url=${encodeURIComponent(window.location.href)}`;
+      // CF Access session expired — reload so CF Access can re-authenticate
+      window.location.reload();
     }
     throw new Error("Unauthorized");
   }
