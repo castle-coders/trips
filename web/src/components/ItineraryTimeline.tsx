@@ -45,20 +45,35 @@ interface TimelineEntry {
 }
 
 function formatTime(time: string, tz?: string): string {
+  // The stored datetime string is a wall-clock time (as entered by the user),
+  // not a UTC timestamp. Append "Z" so Date() treats it as UTC and preserves
+  // the numeric values rather than reinterpreting them in the browser's locale.
+  const hasOffset = /[Z+\-]\d*$/.test(time);
+  const utcTime = hasOffset ? time : time + "Z";
+  const d = new Date(utcTime);
+
   const opts: Intl.DateTimeFormatOptions = {
     weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "UTC",
   };
+
   if (tz) {
     try {
-      opts.timeZone = tz;
-      opts.timeZoneName = "short";
-    } catch { /* ignore invalid tz */ }
+      // Format the stored values directly (as UTC) then append the tz abbreviation.
+      const formatted = d.toLocaleString("en-US", opts);
+      const abbr = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        timeZoneName: "short",
+      }).formatToParts(d).find((p) => p.type === "timeZoneName")?.value;
+      return abbr ? `${formatted} ${abbr}` : formatted;
+    } catch { /* fall through on invalid tz */ }
   }
-  return new Date(time).toLocaleString("en-US", opts);
+
+  return d.toLocaleString("en-US", opts);
 }
 
 function buildEntries(items: Itinerary[]): TimelineEntry[] {
@@ -113,11 +128,13 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
     if (item.type === "Flight") {
       const cc = item.content as Record<string, unknown>;
       const rawLegs = cc.legs as Array<Record<string, string>> | undefined;
-      // If legs are present, use only those — the top-level content fields are
-      // a summary and would create a duplicate/phantom first card.
-      const allLegs = rawLegs && rawLegs.length > 0
+      // Leg 0 is always stored as top-level fields. Additional legs (1+) are in
+      // the `legs` array. Combine them so all legs appear on the timeline.
+      const leg0 = { airline: c.airline, flightNumber: c.flightNumber, departureAirport: c.departureAirport, departureTime: c.departureTime, departureTimeTz: (cc.departureTimeTz as string) || "", arrivalAirport: c.arrivalAirport, arrivalTime: c.arrivalTime, arrivalTimeTz: (cc.arrivalTimeTz as string) || "" };
+      const extraLegs = rawLegs && rawLegs.length > 0
         ? rawLegs.map((l) => ({ airline: l.airline || "", flightNumber: l.flightNumber || "", departureAirport: l.departureAirport || "", departureTime: l.departureTime || "", departureTimeTz: l.departureTimeTz || "", arrivalAirport: l.arrivalAirport || "", arrivalTime: l.arrivalTime || "", arrivalTimeTz: l.arrivalTimeTz || "" }))
-        : [{ airline: c.airline, flightNumber: c.flightNumber, departureAirport: c.departureAirport, departureTime: c.departureTime, departureTimeTz: (cc.departureTimeTz as string) || "", arrivalAirport: c.arrivalAirport, arrivalTime: c.arrivalTime, arrivalTimeTz: (cc.arrivalTimeTz as string) || "" }];
+        : [];
+      const allLegs = [leg0, ...extraLegs];
       for (let li = 0; li < allLegs.length; li++) {
         const leg = allLegs[li];
         const legTitle = `${leg.airline || ""} ${leg.flightNumber || ""} — ${leg.departureAirport || ""} to ${leg.arrivalAirport || ""}`.trim();
@@ -275,14 +292,14 @@ export function ItineraryTimeline({
                 let seatMap: Map<string, string>;
                 if (entry.item.type === "Flight" && entry.legIndex != null) {
                   const rawLegs = c.legs as Array<Record<string, unknown>> | undefined;
-                  if (rawLegs && rawLegs.length > 0) {
-                    // Legs-only rendering: legIndex maps directly to legs array
-                    const leg = rawLegs[entry.legIndex];
-                    const seats = leg?.seatAssignments as Array<Record<string, string>> | undefined;
+                  if (entry.legIndex === 0 || !rawLegs?.length) {
+                    // Leg 0 seats live at top-level seatAssignments
+                    const seats = c.seatAssignments as Array<Record<string, string>> | undefined;
                     seatMap = new Map(seats?.map((s) => [s.participantId, s.seatNumber]) || []);
                   } else {
-                    // No legs array: single entry using top-level seatAssignments
-                    const seats = c.seatAssignments as Array<Record<string, string>> | undefined;
+                    // Legs 1+: seats are in rawLegs[legIndex - 1].seatAssignments
+                    const leg = rawLegs[entry.legIndex - 1];
+                    const seats = leg?.seatAssignments as Array<Record<string, string>> | undefined;
                     seatMap = new Map(seats?.map((s) => [s.participantId, s.seatNumber]) || []);
                   }
                 } else {
