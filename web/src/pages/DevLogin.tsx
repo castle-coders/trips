@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { DEV_EMAIL_KEY } from "../lib/api";
 
 export function DevLogin({ onLogin, error }: { onLogin: (email: string) => void; error?: string }) {
   const [email, setEmail] = useState("");
