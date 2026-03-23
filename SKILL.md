@@ -4,13 +4,17 @@ You are a travel management agent with access to the Trips API. Your purpose is 
 
 ## API Access
 
-**Base URL:** Provided via environment or configuration (e.g., `https://trips-api.example.com` or `http://localhost:8787` for development).
+**Base URL:** `https://trips.prenticew.com/api` (production) or `http://localhost:8787` (development).
 
-**Authentication:** All API requests require a Bearer token in the `Authorization` header. Obtain a token via `/auth/login` using the configured service account credentials.
+**Authentication:** The API is protected by Cloudflare Access. Requests must include the CF Access JWT — sent automatically as the `CF_Authorization` cookie for browser sessions, or via the `Cf-Access-Jwt-Assertion` header for service tokens.
+
+For development (`DEV_MODE=true` on the API), include the `X-Dev-User-Email` header instead:
 
 ```
-Authorization: Bearer <token>
+X-Dev-User-Email: user@example.com
 ```
+
+There is no `/auth/login` endpoint. Authentication is handled entirely by Cloudflare Access.
 
 **OpenAPI Spec:** Available at `GET /openapi.json` for full schema details. Interactive docs at `GET /docs`. See the [OpenAPI Documentation](#openapi-documentation) section below for usage details.
 
@@ -64,19 +68,50 @@ Use flight details from itineraries to check real-time status:
 ### Authentication
 
 ```
-POST /auth/login
-Body: { "email": string, "password": string }
-Response: { "token": string, "user": { ... } }
+GET  /auth/me                          — Get current authenticated user
+PUT  /auth/me                          — Update profile (name only)
+GET  /auth/users                       — List all users (for participant picker)
 ```
+
+**User object:**
+```json
+{ "id": "uuid", "email": "user@example.com", "name": "Jane Doe", "role": "admin|viewer", "avatarUrl": null }
+```
+
+Users are auto-provisioned on first Cloudflare Access login. The first user (or the user whose email matches `BOOTSTRAP_ADMIN_EMAIL`) is granted the `admin` role. All others default to `viewer`.
+
+### Invites
+
+```
+GET    /auth/invite/:token             — Get invite info (public, no auth required)
+POST   /auth/invite/:token/accept      — Accept invite (authenticated)
+
+GET    /trips/:tripId/invites                     — List pending invites for a trip
+POST   /trips/:tripId/invites                     — Create invite link
+DELETE /trips/:tripId/invites/:inviteId            — Revoke invite
+```
+
+**Create Invite body** (owners only — all invitees join as Viewer):
+```json
+{ "name": "Jane Doe" }
+```
+`name` is optional. If provided it is used as the participant's display name when they accept. The response includes a `token` field — the invite URL is `https://trips.prenticew.com/invite/<token>`.
+
+**Invite Info response** (public endpoint):
+```json
+{ "tripName": "Tokyo Trip", "inviterName": "John", "role": "Viewer", "expiresAt": "2026-03-29T..." }
+```
+
+Invites expire after 7 days. Accepting an invite adds the authenticated CF Access user as a participant, using the invite name if set.
 
 ### Trips
 
 ```
-GET    /trips                              — List all trips
-GET    /trips/:tripId                      — Get trip details
+GET    /trips                              — List trips (only trips the user is a participant on; admins see all)
+GET    /trips/:tripId                      — Get trip details (404 if not a participant)
 POST   /trips                              — Create trip
-PUT    /trips/:tripId                      — Update trip
-DELETE /trips/:tripId                      — Delete trip
+PUT    /trips/:tripId                      — Update trip (editors and owners only)
+DELETE /trips/:tripId                      — Delete trip (owners and admins only)
 ```
 
 **Create/Update Trip body:**
@@ -276,12 +311,14 @@ DELETE /trips/:tripId/participants/:participantId           — Remove participa
 **Create Participant body:**
 ```json
 {
-  "userId": "uuid (optional — omit for non-user travelers)",
-  "email": "jane@example.com",
+  "userId": "uuid (optional — link to an existing app user)",
+  "email": "jane@example.com (optional)",
   "name": "Jane Doe",
-  "role": "Editor"
+  "role": "Viewer"
 }
 ```
+
+When adding an existing app user, provide their `userId` from `GET /auth/users`. For travelers who don't have app accounts, omit `userId` and use name/email only.
 
 ### Expenses
 
@@ -396,7 +433,8 @@ This serves a **Scalar API Reference** UI — an interactive web page where you 
 - Never expose confirmation numbers or ticket numbers unless the user explicitly asks — these are sensitive fields.
 
 ### Error handling:
-- If the API returns 401, re-authenticate and retry.
+- If the API returns 401, the Cloudflare Access session has expired — inform the user they need to re-authenticate via the app.
+- If the API returns 404 for a trip, the user may not be a participant on that trip (access is restricted to participants).
 - If a trip or itinerary can't be found, verify the ID and inform the user.
 - If creating an itinerary fails validation, check the content against the schema for the given type and fix the payload.
 - Always confirm successful operations back to the user with a summary of what was created or updated.
