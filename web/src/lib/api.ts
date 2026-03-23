@@ -17,10 +17,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   if (res.status === 401) {
-    if (!import.meta.env.DEV) {
-      // CF Access session expired — reload so CF Access can re-authenticate
-      window.location.reload();
-    }
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
