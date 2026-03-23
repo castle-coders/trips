@@ -3,7 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 routes = [
-  { pattern = "trips-api.prenticew.com", custom_domain = true }
+  { pattern = "trips-api.prenticew.com", custom_domain = true },
+  { pattern = "trips.prenticew.com/api/*", zone_name = "prenticew.com" }
 ]
 
 [vars]

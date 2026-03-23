@@ -1,6 +1,6 @@
 import type { Trip, Participant, Itinerary } from "./types";
 
-const BASE = import.meta.env.DEV ? "/api" : "https://trips-api.prenticew.com";
+const BASE = "/api";
 
 export const DEV_EMAIL_KEY = "dev_user_email";
 

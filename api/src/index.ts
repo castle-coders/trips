@@ -73,4 +73,13 @@ app.route("/trips/:tripId/itineraries", itineraryRoutes);
 app.route("/trips/:tripId/invites", inviteRoutes);
 app.route("/admin", adminRoutes);
 
-export default app;
+export default {
+  fetch(request: Request, env: unknown, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
+      url.pathname = url.pathname.slice(4) || "/";
+      request = new Request(url, request);
+    }
+    return app.fetch(request, env as never, ctx);
+  },
+};
