@@ -113,10 +113,11 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
     if (item.type === "Flight") {
       const cc = item.content as Record<string, unknown>;
       const rawLegs = cc.legs as Array<Record<string, string>> | undefined;
-      const allLegs = [
-        { airline: c.airline, flightNumber: c.flightNumber, departureAirport: c.departureAirport, departureTime: c.departureTime, departureTimeTz: (cc.departureTimeTz as string) || "", arrivalAirport: c.arrivalAirport, arrivalTime: c.arrivalTime, arrivalTimeTz: (cc.arrivalTimeTz as string) || "" },
-        ...(rawLegs || []).map((l) => ({ airline: l.airline || "", flightNumber: l.flightNumber || "", departureAirport: l.departureAirport || "", departureTime: l.departureTime || "", departureTimeTz: l.departureTimeTz || "", arrivalAirport: l.arrivalAirport || "", arrivalTime: l.arrivalTime || "", arrivalTimeTz: l.arrivalTimeTz || "" })),
-      ];
+      // If legs are present, use only those — the top-level content fields are
+      // a summary and would create a duplicate/phantom first card.
+      const allLegs = rawLegs && rawLegs.length > 0
+        ? rawLegs.map((l) => ({ airline: l.airline || "", flightNumber: l.flightNumber || "", departureAirport: l.departureAirport || "", departureTime: l.departureTime || "", departureTimeTz: l.departureTimeTz || "", arrivalAirport: l.arrivalAirport || "", arrivalTime: l.arrivalTime || "", arrivalTimeTz: l.arrivalTimeTz || "" }))
+        : [{ airline: c.airline, flightNumber: c.flightNumber, departureAirport: c.departureAirport, departureTime: c.departureTime, departureTimeTz: (cc.departureTimeTz as string) || "", arrivalAirport: c.arrivalAirport, arrivalTime: c.arrivalTime, arrivalTimeTz: (cc.arrivalTimeTz as string) || "" }];
       for (let li = 0; li < allLegs.length; li++) {
         const leg = allLegs[li];
         const legTitle = `${leg.airline || ""} ${leg.flightNumber || ""} — ${leg.departureAirport || ""} to ${leg.arrivalAirport || ""}`.trim();
@@ -273,15 +274,15 @@ export function ItineraryTimeline({
                 // Get seat assignments for this specific leg
                 let seatMap: Map<string, string>;
                 if (entry.item.type === "Flight" && entry.legIndex != null) {
-                  if (entry.legIndex === 0) {
-                    // Top-level seatAssignments
-                    const seats = c.seatAssignments as Array<Record<string, string>> | undefined;
+                  const rawLegs = c.legs as Array<Record<string, unknown>> | undefined;
+                  if (rawLegs && rawLegs.length > 0) {
+                    // Legs-only rendering: legIndex maps directly to legs array
+                    const leg = rawLegs[entry.legIndex];
+                    const seats = leg?.seatAssignments as Array<Record<string, string>> | undefined;
                     seatMap = new Map(seats?.map((s) => [s.participantId, s.seatNumber]) || []);
                   } else {
-                    // Leg-specific seatAssignments
-                    const rawLegs = c.legs as Array<Record<string, unknown>> | undefined;
-                    const leg = rawLegs?.[entry.legIndex - 1];
-                    const seats = leg?.seatAssignments as Array<Record<string, string>> | undefined;
+                    // No legs array: single entry using top-level seatAssignments
+                    const seats = c.seatAssignments as Array<Record<string, string>> | undefined;
                     seatMap = new Map(seats?.map((s) => [s.participantId, s.seatNumber]) || []);
                   }
                 } else {
