@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { trips } from "../db/schema";
+import { trips, participants } from "../db/schema";
 import { TripSchema, CreateTripSchema, UpdateTripSchema } from "../schemas/trip";
 
 const app = new OpenAPIHono<Env>();
@@ -21,8 +21,15 @@ app.openapi(
   }),
   async (c) => {
     const db = getDb(c.env.DB);
-    const result = await db.select().from(trips);
-    return c.json(result, 200);
+    const user = c.get("user");
+    if (user.role === "admin") {
+      return c.json(await db.select().from(trips), 200);
+    }
+    const result = await db
+      .select({ trips })
+      .from(trips)
+      .innerJoin(participants, and(eq(participants.tripId, trips.id), eq(participants.userId, user.id)));
+    return c.json(result.map((r) => r.trips), 200);
   }
 );
 
@@ -46,6 +53,15 @@ app.openapi(
   async (c) => {
     const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
+    const user = c.get("user");
+    if (user.role !== "admin") {
+      const membership = await db
+        .select({ id: participants.id })
+        .from(participants)
+        .where(and(eq(participants.tripId, tripId), eq(participants.userId, user.id)))
+        .limit(1);
+      if (!membership.length) return c.json({ error: "Trip not found" }, 404);
+    }
     const result = await db.select().from(trips).where(eq(trips.id, tripId));
     if (!result.length) return c.json({ error: "Trip not found" }, 404);
     return c.json(result[0], 200);
