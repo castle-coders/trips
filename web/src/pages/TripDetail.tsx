@@ -164,15 +164,24 @@ export function TripDetail() {
               setInviteSuccess("");
               setInviteSending(true);
               try {
-                const name = inviteMode === "existing"
-                  ? allUsers.find((u) => u.id === inviteUserId)?.name
-                  : inviteName || undefined;
-                const inv = await invitesApi.create(tripId, { name });
-                const link = `${window.location.origin}/invite/${inv.token}`;
-                setInviteSuccess(link);
-                setPendingInvites([...pendingInvites, inv]);
-                setInviteUserId("");
-                setInviteName("");
+                if (inviteMode === "existing") {
+                  const selected = allUsers.find((u) => u.id === inviteUserId);
+                  if (!selected) return;
+                  const p = await participantsApi.create(tripId, {
+                    userId: selected.id,
+                    name: selected.name,
+                    role: "Viewer",
+                  });
+                  setParticipants([...participants, p]);
+                  setInviteUserId("");
+                  setShowInvite(false);
+                } else {
+                  const inv = await invitesApi.create(tripId, { name: inviteName || undefined });
+                  const link = `${window.location.origin}/invite/${inv.token}`;
+                  setInviteSuccess(link);
+                  setPendingInvites([...pendingInvites, inv]);
+                  setInviteName("");
+                }
               } catch (err: any) {
                 setInviteError(err.message);
               } finally {
