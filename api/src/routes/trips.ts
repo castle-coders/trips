@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { trips, participants } from "../db/schema";
 import { TripSchema, CreateTripSchema, UpdateTripSchema } from "../schemas/trip";
+import { getTripRole } from "../middleware/tripRole";
 
 const app = new OpenAPIHono<Env>();
 
@@ -162,6 +163,9 @@ app.openapi(
   async (c) => {
     const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
+    const user = c.get("user");
+    const role = await getTripRole(db, tripId, user.id, user.role);
+    if (role !== "Owner") return c.json({ error: "Forbidden: only trip Owners can delete trips" }, 403);
     const existing = await db
       .select()
       .from(trips)
