@@ -187,10 +187,12 @@ export function ItineraryTimeline({
   items,
   onEdit,
   onDelete,
+  showCost = true,
 }: {
   items: Itinerary[];
   onEdit?: (item: Itinerary) => void;
   onDelete?: (item: Itinerary) => void;
+  showCost?: boolean;
 }) {
   const entries = buildEntries(items);
 
@@ -259,7 +261,7 @@ export function ItineraryTimeline({
               </div>
               <h4 className="font-medium text-gray-900">{entry.title}</h4>
               <p className="text-sm text-gray-500">{entry.timeLabel}</p>
-              {entry.item.totalCost != null && (
+              {showCost && entry.item.totalCost != null && (
                 <p className="mt-1 text-sm font-medium text-gray-700">
                   {entry.item.currency || "USD"}{" "}
                   {entry.item.totalCost.toFixed(2)}

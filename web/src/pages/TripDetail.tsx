@@ -364,6 +364,7 @@ export function TripDetail() {
           await itinerariesApi.delete(trip.id, item.id);
           setItems(items.filter((i) => i.id !== item.id));
         } : undefined}
+        showCost={user?.role === "admin" || tripRole === "Owner" || tripRole === "Editor"}
       />
 
       {/* Modals */}
