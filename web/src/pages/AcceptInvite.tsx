@@ -37,7 +37,7 @@ export function AcceptInvite() {
   const handleSignIn = () => {
     const redirectUrl = encodeURIComponent(window.location.href);
     const hint = info?.email ? `&login_hint=${encodeURIComponent(info.email)}` : "";
-    window.location.href = `/cdn-cgi/access/login?redirect_url=${redirectUrl}${hint}`;
+    window.location.href = `https://pw10n.cloudflareaccess.com/cdn-cgi/access/login/trips.prenticew.com?redirect_url=${redirectUrl}${hint}`;
   };
 
   if (loading || authLoading) {
