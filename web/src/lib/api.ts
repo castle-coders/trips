@@ -4,25 +4,6 @@ const BASE = import.meta.env.DEV ? "/api" : "https://trips-api.prenticew.com";
 
 export const DEV_EMAIL_KEY = "dev_user_email";
 
-// CF Access JWT fetched from the frontend's identity endpoint (production only)
-let cfAccessJwt: string | null = null;
-
-export function setCfAccessJwt(jwt: string | null) {
-  cfAccessJwt = jwt;
-}
-
-export async function refreshCfAccessJwt(): Promise<string | null> {
-  try {
-    const res = await fetch("/cdn-cgi/access/get-identity");
-    if (!res.ok) return null;
-    const data = await res.json();
-    cfAccessJwt = data.jwt ?? null;
-    return cfAccessJwt;
-  } catch {
-    return null;
-  }
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const devEmail = import.meta.env.DEV ? localStorage.getItem(DEV_EMAIL_KEY) : null;
   const res = await fetch(`${BASE}${path}`, {
@@ -30,7 +11,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(cfAccessJwt ? { "Cf-Access-Jwt-Assertion": cfAccessJwt } : {}),
       ...(devEmail ? { "X-Dev-User-Email": devEmail } : {}),
       ...init?.headers,
     },

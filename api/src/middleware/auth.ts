@@ -1,5 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { getCookie } from "hono/cookie";
 import { eq } from "drizzle-orm";
 import type { Env, AuthUser } from "../db";
 import { getDb } from "../db";
@@ -111,7 +112,8 @@ async function authenticateDevUser(
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
 
-  const cfJwt = c.req.header("Cf-Access-Jwt-Assertion");
+  // Accept JWT from header (injected by CF Access proxy) or cookie (sent by browser directly)
+  const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
     const user = await authenticateCFAccess(
       cfJwt,

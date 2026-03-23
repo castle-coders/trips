@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
-import { DEV_EMAIL_KEY, account, refreshCfAccessJwt } from "./api";
+import { DEV_EMAIL_KEY, account } from "./api";
 
 const CF_LOGOUT_URL = "https://trips-api.prenticew.com/cdn-cgi/access/logout";
 
@@ -35,18 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [devLoginError, setDevLoginError] = useState("");
 
   const fetchMe = useCallback(async () => {
-    if (import.meta.env.DEV) {
-      if (!localStorage.getItem(DEV_EMAIL_KEY)) {
-        setLoading(false);
-        return;
-      }
-    } else {
-      const jwt = await refreshCfAccessJwt();
-      if (!jwt) {
-        // No CF Access session — CF Access will redirect to login on next navigation
-        setLoading(false);
-        return;
-      }
+    if (import.meta.env.DEV && !localStorage.getItem(DEV_EMAIL_KEY)) {
+      setLoading(false);
+      return;
     }
     try {
       setUser(await account.getMe());
