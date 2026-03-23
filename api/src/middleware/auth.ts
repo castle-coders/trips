@@ -85,7 +85,8 @@ async function authenticateCFAccess(
     await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
 
     return { id, email, name, role };
-  } catch {
+  } catch (err) {
+    console.error("authenticateCFAccess failed:", err);
     return null;
   }
 }
