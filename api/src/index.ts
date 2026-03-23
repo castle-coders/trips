@@ -17,9 +17,18 @@ import { cors } from "hono/cors";
 
 const app = new OpenAPIHono<Env>();
 
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://trips.prenticew.com",
+];
+
 app.use("*", cors({
-  origin: ["http://localhost:5173", "https://trips.prenticew.com"],
-  allowHeaders: ["Content-Type", "Authorization", "CF-Access-Jwt-Assertion"],
+  origin: (origin) => {
+    if (ALLOWED_ORIGINS.includes(origin)) return origin;
+    if (origin.endsWith(".trips-web-cm1.pages.dev")) return origin;
+    return null;
+  },
+  allowHeaders: ["Content-Type", "Authorization", "CF-Access-Jwt-Assertion", "X-Dev-User-Email"],
   allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
   exposeHeaders: ["Content-Length"],
   maxAge: 600,
