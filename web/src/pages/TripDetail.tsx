@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   trips as tripsApi,
   participants as participantsApi,
@@ -19,6 +19,7 @@ import { ItineraryForm } from "../components/ItineraryForm";
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -120,12 +121,26 @@ export function TripDetail() {
             )}
           </div>
           {canEdit && (
-            <button
-              onClick={() => setEditingTrip(true)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:w-auto"
-            >
-              Edit Trip
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditingTrip(true)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Edit Trip
+              </button>
+              {(user?.role === "admin" || tripRole === "Owner") && (
+                <button
+                  onClick={async () => {
+                    if (!tripId || !confirm("Delete this trip?")) return;
+                    await tripsApi.delete(tripId);
+                    navigate("/");
+                  }}
+                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                  Delete Trip
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
