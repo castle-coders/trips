@@ -31,8 +31,9 @@ export function TripDetail() {
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"existing" | "new">("existing");
   const [inviteUserId, setInviteUserId] = useState("");
-  const [inviteRole, setInviteRole] = useState<string>("Viewer");
+  const [inviteName, setInviteName] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -153,10 +154,7 @@ export function TripDetail() {
 
         {canManageParticipants && showInvite && (() => {
           const participantUserIds = new Set(participants.map((p) => p.userId));
-          const invitedNames = new Set(pendingInvites.map((i) => i.name));
-          const availableUsers = allUsers.filter(
-            (u) => !participantUserIds.has(u.id) && !invitedNames.has(u.name)
-          );
+          const availableUsers = allUsers.filter((u) => !participantUserIds.has(u.id));
           return (
           <form
             onSubmit={async (e) => {
@@ -166,12 +164,15 @@ export function TripDetail() {
               setInviteSuccess("");
               setInviteSending(true);
               try {
-                const name = allUsers.find((u) => u.id === inviteUserId)?.name;
-                const inv = await invitesApi.create(tripId, { name, role: inviteRole });
+                const name = inviteMode === "existing"
+                  ? allUsers.find((u) => u.id === inviteUserId)?.name
+                  : inviteName || undefined;
+                const inv = await invitesApi.create(tripId, { name });
                 const link = `${window.location.origin}/invite/${inv.token}`;
                 setInviteSuccess(link);
                 setPendingInvites([...pendingInvites, inv]);
                 setInviteUserId("");
+                setInviteName("");
               } catch (err: any) {
                 setInviteError(err.message);
               } finally {
@@ -180,26 +181,40 @@ export function TripDetail() {
             }}
             className="mb-4 rounded-lg border border-gray-200 bg-white p-4"
           >
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <select
-                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
-                value={inviteUserId}
-                onChange={(e) => setInviteUserId(e.target.value)}
-              >
-                <option value="">Anyone with the link...</option>
-                {availableUsers.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-              <select
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value)}
-              >
-                <option value="Viewer">Viewer</option>
-                <option value="Editor">Editor</option>
-                <option value="Owner">Owner</option>
-              </select>
+            <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-0.5 text-sm">
+              {(["existing", "new"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => { setInviteMode(m); setInviteUserId(""); setInviteName(""); setInviteSuccess(""); setInviteError(""); }}
+                  className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${inviteMode === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  {m === "existing" ? "Existing user" : "New user"}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              {inviteMode === "existing" ? (
+                <select
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                  value={inviteUserId}
+                  onChange={(e) => setInviteUserId(e.target.value)}
+                  required
+                >
+                  <option value="">Select a user...</option>
+                  {availableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                  type="text"
+                  placeholder="Name"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                />
+              )}
               <button
                 type="submit"
                 disabled={inviteSending}
@@ -208,14 +223,10 @@ export function TripDetail() {
                 {inviteSending ? "..." : "Create Invite"}
               </button>
             </div>
-            {inviteError && (
-              <p className="mt-2 text-sm text-red-600">{inviteError}</p>
-            )}
+            {inviteError && <p className="mt-2 text-sm text-red-600">{inviteError}</p>}
             {inviteSuccess && (
               <div className="mt-3">
-                <p className="mb-1 text-sm text-green-600">
-                  Invite created! Share this link:
-                </p>
+                <p className="mb-1 text-sm text-green-600">Invite created! Share this link:</p>
                 <div className="flex items-center gap-2">
                   <input
                     className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-600"
@@ -239,17 +250,35 @@ export function TripDetail() {
 
         {/* Confirmed participants */}
         {participants.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-1">
             {participants.map((p) => (
               <div
                 key={p.id}
-                className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5"
+                className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2"
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-light text-xs font-bold text-accent">
-                  {p.name[0]}
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-light text-xs font-bold text-accent">
+                    {p.name[0]}
+                  </div>
+                  <span className="text-sm text-gray-700">{p.name}</span>
                 </div>
-                <span className="text-sm text-gray-700">{p.name}</span>
-                <span className="text-xs text-gray-400">{p.role}</span>
+                {canManageParticipants ? (
+                  <select
+                    className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
+                    value={p.role}
+                    onChange={async (e) => {
+                      if (!tripId) return;
+                      const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
+                      setParticipants(participants.map((x) => x.id === p.id ? updated : x));
+                    }}
+                  >
+                    <option value="Viewer">Viewer</option>
+                    <option value="Editor">Editor</option>
+                    <option value="Owner">Owner</option>
+                  </select>
+                ) : (
+                  <span className="text-xs text-gray-400">{p.role}</span>
+                )}
               </div>
             ))}
           </div>

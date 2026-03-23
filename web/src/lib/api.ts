@@ -45,6 +45,11 @@ export const participants = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  updateRole: (tripId: string, participantId: string, role: string) =>
+    request<Participant>(`/trips/${tripId}/participants/${participantId}`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
 };
 
 // Itineraries
@@ -113,7 +118,7 @@ export interface InviteInfo {
 
 export const invitesApi = {
   list: (tripId: string) => request<Invite[]>(`/trips/${tripId}/invites`),
-  create: (tripId: string, data: { name?: string; role?: string }) =>
+  create: (tripId: string, data: { name?: string }) =>
     request<Invite>(`/trips/${tripId}/invites`, {
       method: "POST",
       body: JSON.stringify(data),

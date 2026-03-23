@@ -1,10 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { invites, trips } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
 import { getTripRole } from "../middleware/tripRole";
-import { SignJWT } from "jose";
 
 const app = new OpenAPIHono<Env>();
 
@@ -28,7 +27,6 @@ const InviteSchema = z
 const CreateInviteSchema = z
   .object({
     name: z.string().optional(),
-    role: z.enum(["Owner", "Editor", "Viewer"]).default("Viewer"),
   })
   .openapi("CreateInvite");
 
@@ -98,7 +96,7 @@ app.openapi(
       return c.json({ error: "Forbidden" }, 403);
     }
 
-    const { name, role } = c.req.valid("json");
+    const { name } = c.req.valid("json");
 
     // Verify trip exists
     const tripRows = await db
@@ -117,7 +115,7 @@ app.openapi(
       tripId,
       email: null,
       name: name ?? null,
-      role,
+      role: "Viewer",
       token,
       status: "pending",
       invitedBy: user.id,
