@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import type { ReactNode } from "react";
 import { DEV_EMAIL_KEY, account } from "./api";
 
-const CF_LOGOUT_URL = "https://trips-api.prenticew.com/cdn-cgi/access/logout";
+const CF_LOGOUT_URL = "https://trips.prenticew.com/cdn-cgi/access/logout";
 
 export interface AuthUser {
   id: string;
