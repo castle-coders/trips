@@ -248,14 +248,11 @@ export function TripDetail() {
           );
         })()}
 
-        {/* Confirmed participants */}
-        {participants.length > 0 && (
+        {/* Participants + pending invites */}
+        {(participants.length > 0 || pendingInvites.length > 0) && (
           <div className="space-y-1">
             {participants.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2"
-              >
+              <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
                 <div className="flex items-center gap-2">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-light text-xs font-bold text-accent">
                     {p.name[0]}
@@ -295,37 +292,23 @@ export function TripDetail() {
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Pending invites */}
-        {pendingInvites.length > 0 && (
-          <div className={`space-y-2${participants.length > 0 ? " mt-3" : ""}`}>
             {pendingInvites.map((inv) => (
-              <div
-                key={inv.id}
-                className="flex items-center justify-between rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2.5"
-              >
+              <div key={inv.id} className="flex items-center justify-between rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-400">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-400">
                     {inv.name ? inv.name[0] : "?"}
                   </div>
-                  <span className="text-sm text-gray-500">{inv.name || "Pending invite"}</span>
-                  <span className="text-xs text-gray-400">{inv.role}</span>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                    Pending
-                  </span>
+                  <span className="text-sm text-gray-400">{inv.name || "Invite"}</span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Pending</span>
                 </div>
                 {canManageParticipants && (
                   <button
                     onClick={async () => {
                       if (!tripId) return;
                       await invitesApi.revoke(tripId, inv.id);
-                      setPendingInvites(
-                        pendingInvites.filter((x) => x.id !== inv.id)
-                      );
+                      setPendingInvites(pendingInvites.filter((x) => x.id !== inv.id));
                     }}
-                    className="text-xs text-red-500 hover:text-red-700"
+                    className="text-xs text-red-400 hover:text-red-600"
                   >
                     Revoke
                   </button>
