@@ -12,7 +12,7 @@ const InviteSchema = z
   .object({
     id: z.string(),
     tripId: z.string(),
-    email: z.string(),
+    email: z.string().nullable(),
     name: z.string().nullable(),
     role: z.string(),
     token: z.string(),
@@ -27,6 +27,7 @@ const InviteSchema = z
 
 const CreateInviteSchema = z
   .object({
+    name: z.string().optional(),
     role: z.enum(["Owner", "Editor", "Viewer"]).default("Viewer"),
   })
   .openapi("CreateInvite");
@@ -97,7 +98,7 @@ app.openapi(
       return c.json({ error: "Forbidden" }, 403);
     }
 
-    const { role } = c.req.valid("json");
+    const { name, role } = c.req.valid("json");
 
     // Verify trip exists
     const tripRows = await db
@@ -115,7 +116,7 @@ app.openapi(
       id: crypto.randomUUID(),
       tripId,
       email: null,
-      name: null,
+      name: name ?? null,
       role,
       token,
       status: "pending",

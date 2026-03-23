@@ -5,7 +5,9 @@ import {
   participants as participantsApi,
   itineraries as itinerariesApi,
   invitesApi,
+  usersApi,
   type Invite,
+  type UserSummary,
 } from "../lib/api";
 import type { Trip, Participant, Itinerary } from "../lib/types";
 import { formatDateRange } from "../lib/format";
@@ -29,10 +31,12 @@ export function TripDetail() {
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
+  const [inviteUserId, setInviteUserId] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("Viewer");
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserSummary[]>([]);
 
   const load = useCallback(async () => {
     if (!tripId) return;
@@ -133,7 +137,13 @@ export function TripDetail() {
           </h2>
           {canManageParticipants && (
             <button
-              onClick={() => setShowInvite(!showInvite)}
+              onClick={() => {
+                const opening = !showInvite;
+                setShowInvite(opening);
+                if (opening && allUsers.length === 0) {
+                  usersApi.list().then(setAllUsers).catch(() => {});
+                }
+              }}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             >
               + Add
@@ -141,7 +151,13 @@ export function TripDetail() {
           )}
         </div>
 
-        {canManageParticipants && showInvite && (
+        {canManageParticipants && showInvite && (() => {
+          const participantUserIds = new Set(participants.map((p) => p.userId));
+          const invitedNames = new Set(pendingInvites.map((i) => i.name));
+          const availableUsers = allUsers.filter(
+            (u) => !participantUserIds.has(u.id) && !invitedNames.has(u.name)
+          );
+          return (
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -150,10 +166,12 @@ export function TripDetail() {
               setInviteSuccess("");
               setInviteSending(true);
               try {
-                const inv = await invitesApi.create(tripId, { role: inviteRole });
+                const name = allUsers.find((u) => u.id === inviteUserId)?.name;
+                const inv = await invitesApi.create(tripId, { name, role: inviteRole });
                 const link = `${window.location.origin}/invite/${inv.token}`;
                 setInviteSuccess(link);
                 setPendingInvites([...pendingInvites, inv]);
+                setInviteUserId("");
               } catch (err: any) {
                 setInviteError(err.message);
               } finally {
@@ -163,6 +181,16 @@ export function TripDetail() {
             className="mb-4 rounded-lg border border-gray-200 bg-white p-4"
           >
             <div className="flex flex-col gap-3 sm:flex-row">
+              <select
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                value={inviteUserId}
+                onChange={(e) => setInviteUserId(e.target.value)}
+              >
+                <option value="">Anyone with the link...</option>
+                {availableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
               <select
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 value={inviteRole}
@@ -206,7 +234,8 @@ export function TripDetail() {
               </div>
             )}
           </form>
-        )}
+          );
+        })()}
 
         {/* Confirmed participants */}
         {participants.length > 0 && (
@@ -235,7 +264,10 @@ export function TripDetail() {
                 className="flex items-center justify-between rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2.5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Pending invite</span>
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-400">
+                    {inv.name ? inv.name[0] : "?"}
+                  </div>
+                  <span className="text-sm text-gray-500">{inv.name || "Pending invite"}</span>
                   <span className="text-xs text-gray-400">{inv.role}</span>
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
                     Pending
