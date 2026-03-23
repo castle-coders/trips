@@ -181,7 +181,7 @@ export function TripDetail() {
                   name: selectedName,
                   role: inviteRole,
                 });
-                const link = `${window.location.origin}/invite/${inv.token}`;
+                const link = `${window.location.origin}/invite/${inv.token}?login_hint=${encodeURIComponent(inviteEmail)}`;
                 setInviteSuccess(link);
                 setPendingInvites([...pendingInvites, inv]);
                 setInviteEmail("");

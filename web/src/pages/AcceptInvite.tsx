@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { invitesApi, type InviteInfo } from "../lib/api";
-import { useAuth } from "../lib/auth";
 
 export function AcceptInvite() {
   const { token } = useParams<{ token: string }>();
-  const { user, loading: authLoading } = useAuth();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,12 +32,7 @@ export function AcceptInvite() {
     }
   };
 
-  const handleSignIn = () => {
-    const hint = info?.email ? `?login_hint=${encodeURIComponent(info.email)}` : "";
-    window.location.href = `/${hint}`;
-  };
-
-  if (loading || authLoading) {
+  if (loading) {
     return <p className="py-20 text-center text-gray-400">Loading...</p>;
   }
 
@@ -71,27 +64,13 @@ export function AcceptInvite() {
 
         {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
-        {user ? (
-          <button
-            onClick={handleAccept}
-            disabled={accepting}
-            className="w-full rounded-lg bg-accent py-2.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            {accepting ? "Joining..." : "Join Trip"}
-          </button>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">
-              Sign in as <span className="font-medium text-gray-700">{info.email}</span> to accept
-            </p>
-            <button
-              onClick={handleSignIn}
-              className="w-full rounded-lg bg-accent py-2.5 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              Sign in to join
-            </button>
-          </div>
-        )}
+        <button
+          onClick={handleAccept}
+          disabled={accepting}
+          className="w-full rounded-lg bg-accent py-2.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+        >
+          {accepting ? "Joining..." : "Join Trip"}
+        </button>
       </div>
     </div>
   );
