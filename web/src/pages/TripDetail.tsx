@@ -262,23 +262,37 @@ export function TripDetail() {
                   </div>
                   <span className="text-sm text-gray-700">{p.name}</span>
                 </div>
-                {canManageParticipants ? (
-                  <select
-                    className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
-                    value={p.role}
-                    onChange={async (e) => {
-                      if (!tripId) return;
-                      const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
-                      setParticipants(participants.map((x) => x.id === p.id ? updated : x));
-                    }}
-                  >
-                    <option value="Viewer">Viewer</option>
-                    <option value="Editor">Editor</option>
-                    <option value="Owner">Owner</option>
-                  </select>
-                ) : (
-                  <span className="text-xs text-gray-400">{p.role}</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {canManageParticipants ? (
+                    <>
+                      <select
+                        className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
+                        value={p.role}
+                        onChange={async (e) => {
+                          if (!tripId) return;
+                          const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
+                          setParticipants(participants.map((x) => x.id === p.id ? updated : x));
+                        }}
+                      >
+                        <option value="Viewer">Viewer</option>
+                        <option value="Editor">Editor</option>
+                        <option value="Owner">Owner</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          if (!tripId) return;
+                          await participantsApi.remove(tripId, p.id);
+                          setParticipants(participants.filter((x) => x.id !== p.id));
+                        }}
+                        className="text-xs text-red-400 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gray-400">{p.role}</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

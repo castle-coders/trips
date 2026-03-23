@@ -50,6 +50,8 @@ export const participants = {
       method: "PUT",
       body: JSON.stringify({ role }),
     }),
+  remove: (tripId: string, participantId: string) =>
+    request<void>(`/trips/${tripId}/participants/${participantId}`, { method: "DELETE" }),
 };
 
 // Itineraries

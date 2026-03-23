@@ -1,4 +1,3 @@
-PRAGMA foreign_keys=OFF;
 CREATE TABLE `invites_new` (
   `id` text PRIMARY KEY NOT NULL,
   `trip_id` text NOT NULL REFERENCES `trips`(`id`) ON DELETE CASCADE,
@@ -11,7 +10,6 @@ CREATE TABLE `invites_new` (
   `expires_at` text NOT NULL,
   `created_at` text NOT NULL
 );
-INSERT INTO `invites_new` SELECT * FROM `invites`;
+INSERT INTO `invites_new` SELECT `id`, `trip_id`, `email`, `name`, `role`, `token`, `status`, `invited_by`, `expires_at`, `created_at` FROM `invites`;
 DROP TABLE `invites`;
 ALTER TABLE `invites_new` RENAME TO `invites`;
-PRAGMA foreign_keys=ON;

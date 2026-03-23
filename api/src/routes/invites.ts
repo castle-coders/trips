@@ -26,7 +26,7 @@ const InviteSchema = z
 
 const CreateInviteSchema = z
   .object({
-    name: z.string().optional(),
+    name: z.string().default(""),
   })
   .openapi("CreateInvite");
 
@@ -114,7 +114,7 @@ app.openapi(
       id: crypto.randomUUID(),
       tripId,
       email: null,
-      name: name ?? null,
+      name: name || null,
       role: "Viewer",
       token,
       status: "pending",
