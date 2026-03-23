@@ -35,18 +35,6 @@ app.use("*", cors({
   credentials: true,
 }));
 
-// Temporary debug endpoint — remove after diagnosing auth
-app.get("/debug", (c) => {
-  const cookieHeader = c.req.header("cookie") ?? "";
-  const cookieNames = cookieHeader.split(";").map((s) => s.trim().split("=")[0]).filter(Boolean);
-  return c.json({
-    hasCfJwtHeader: !!c.req.header("cf-access-jwt-assertion"),
-    cookieNames,
-    hasAuthCookie: cookieNames.includes("CF_Authorization"),
-    url: c.req.url,
-  });
-});
-
 // Public routes (no auth required)
 app.route("/auth", authRoutes);
 
