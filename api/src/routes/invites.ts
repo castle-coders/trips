@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { invites, trips, participants, users } from "../db/schema";
+import { invites, trips } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
 import { getTripRole } from "../middleware/tripRole";
 import { SignJWT } from "jose";
@@ -27,8 +27,6 @@ const InviteSchema = z
 
 const CreateInviteSchema = z
   .object({
-    email: z.string().email(),
-    name: z.string().optional(),
     role: z.enum(["Owner", "Editor", "Viewer"]).default("Viewer"),
   })
   .openapi("CreateInvite");
@@ -99,7 +97,7 @@ app.openapi(
       return c.json({ error: "Forbidden" }, 403);
     }
 
-    const { email, name, role } = c.req.valid("json");
+    const { role } = c.req.valid("json");
 
     // Verify trip exists
     const tripRows = await db
@@ -109,32 +107,6 @@ app.openapi(
       .limit(1);
     if (!tripRows.length) return c.json({ error: "Trip not found" }, 404);
 
-    // Check if already a participant by email
-    const existingParticipant = await db
-      .select()
-      .from(participants)
-      .where(
-        and(eq(participants.tripId, tripId), eq(participants.email, email))
-      )
-      .limit(1);
-    if (existingParticipant.length)
-      return c.json({ error: "Already a participant" }, 409);
-
-    // Check if pending invite already exists
-    const existingInvite = await db
-      .select()
-      .from(invites)
-      .where(
-        and(
-          eq(invites.tripId, tripId),
-          eq(invites.email, email),
-          eq(invites.status, "pending")
-        )
-      )
-      .limit(1);
-    if (existingInvite.length)
-      return c.json({ error: "Invite already pending for this email" }, 409);
-
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const token = crypto.randomUUID();
@@ -142,8 +114,8 @@ app.openapi(
     const row = {
       id: crypto.randomUUID(),
       tripId,
-      email,
-      name: name ?? null,
+      email: null,
+      name: null,
       role,
       token,
       status: "pending",

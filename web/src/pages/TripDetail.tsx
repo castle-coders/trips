@@ -5,9 +5,7 @@ import {
   participants as participantsApi,
   itineraries as itinerariesApi,
   invitesApi,
-  usersApi,
   type Invite,
-  type UserSummary,
 } from "../lib/api";
 import type { Trip, Participant, Itinerary } from "../lib/types";
 import { formatDateRange } from "../lib/format";
@@ -31,14 +29,10 @@ export function TripDetail() {
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState<string>("Viewer");
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
-  const [allUsers, setAllUsers] = useState<UserSummary[]>([]);
-  const [inviteMode, setInviteMode] = useState<"user" | "email">("user");
 
   const load = useCallback(async () => {
     if (!tripId) return;
@@ -139,13 +133,7 @@ export function TripDetail() {
           </h2>
           {canManageParticipants && (
             <button
-              onClick={() => {
-                const opening = !showInvite;
-                setShowInvite(opening);
-                if (opening && allUsers.length === 0) {
-                  usersApi.list().then(setAllUsers).catch(() => {});
-                }
-              }}
+              onClick={() => setShowInvite(!showInvite)}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             >
               + Add
@@ -153,39 +141,19 @@ export function TripDetail() {
           )}
         </div>
 
-        {canManageParticipants && showInvite && (() => {
-          const participantEmails = new Set(participants.map((p) => p.email));
-          const participantUserIds = new Set(participants.map((p) => p.userId));
-          const invitedEmails = new Set(pendingInvites.map((i) => i.email));
-          const availableUsers = allUsers.filter(
-            (u) =>
-              !participantEmails.has(u.email) &&
-              !participantUserIds.has(u.id) &&
-              !invitedEmails.has(u.email)
-          );
-
-          return (
+        {canManageParticipants && showInvite && (
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!tripId || !inviteEmail) return;
+              if (!tripId) return;
               setInviteError("");
               setInviteSuccess("");
               setInviteSending(true);
               try {
-                const selectedName = inviteMode === "user"
-                  ? allUsers.find((u) => u.email === inviteEmail)?.name
-                  : inviteName || undefined;
-                const inv = await invitesApi.create(tripId, {
-                  email: inviteEmail,
-                  name: selectedName,
-                  role: inviteRole,
-                });
+                const inv = await invitesApi.create(tripId, { role: inviteRole });
                 const link = `${window.location.origin}/invite/${inv.token}`;
                 setInviteSuccess(link);
                 setPendingInvites([...pendingInvites, inv]);
-                setInviteEmail("");
-                setInviteName("");
               } catch (err: any) {
                 setInviteError(err.message);
               } finally {
@@ -194,66 +162,7 @@ export function TripDetail() {
             }}
             className="mb-4 rounded-lg border border-gray-200 bg-white p-4"
           >
-            {/* Mode toggle */}
-            <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-0.5 text-sm">
-              <button
-                type="button"
-                onClick={() => { setInviteMode("user"); setInviteEmail(""); setInviteName(""); setInviteSuccess(""); setInviteError(""); }}
-                className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  inviteMode === "user"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                Existing user
-              </button>
-              <button
-                type="button"
-                onClick={() => { setInviteMode("email"); setInviteEmail(""); setInviteName(""); setInviteSuccess(""); setInviteError(""); }}
-                className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  inviteMode === "email"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                New email
-              </button>
-            </div>
-
             <div className="flex flex-col gap-3 sm:flex-row">
-              {inviteMode === "user" ? (
-                <select
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  required
-                >
-                  <option value="">Select a user...</option>
-                  {availableUsers.map((u) => (
-                    <option key={u.id} value={u.email}>
-                      {u.name} ({u.email})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <>
-                  <input
-                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
-                    type="text"
-                    placeholder="Name"
-                    value={inviteName}
-                    onChange={(e) => setInviteName(e.target.value)}
-                  />
-                  <input
-                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
-                    type="email"
-                    placeholder="Email address"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    required
-                  />
-                </>
-              )}
               <select
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 value={inviteRole}
@@ -268,7 +177,7 @@ export function TripDetail() {
                 disabled={inviteSending}
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
               >
-                {inviteSending ? "..." : "Send"}
+                {inviteSending ? "..." : "Create Invite"}
               </button>
             </div>
             {inviteError && (
@@ -288,9 +197,7 @@ export function TripDetail() {
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(inviteSuccess);
-                    }}
+                    onClick={() => navigator.clipboard.writeText(inviteSuccess)}
                     className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Copy
@@ -299,8 +206,7 @@ export function TripDetail() {
               </div>
             )}
           </form>
-          );
-        })()}
+        )}
 
         {/* Confirmed participants */}
         {participants.length > 0 && (
@@ -329,11 +235,7 @@ export function TripDetail() {
                 className="flex items-center justify-between rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2.5"
               >
                 <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-400">
-                    {inv.name ? inv.name[0] : "?"}
-                  </div>
-                  <span className="text-sm text-gray-500">{inv.name || inv.email}</span>
-                  {inv.name && <span className="text-xs text-gray-400">{inv.email}</span>}
+                  <span className="text-sm text-gray-500">Pending invite</span>
                   <span className="text-xs text-gray-400">{inv.role}</span>
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
                     Pending

@@ -79,7 +79,7 @@ export const invites = sqliteTable("invites", {
   tripId: text("trip_id")
     .notNull()
     .references(() => trips.id, { onDelete: "cascade" }),
-  email: text("email").notNull(),
+  email: text("email"),
   name: text("name"),
   role: text("role").notNull().default("Viewer"), // Owner, Editor, Viewer
   token: text("token").notNull().unique(),

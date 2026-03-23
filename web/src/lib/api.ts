@@ -95,8 +95,6 @@ export const usersApi = {
 export interface Invite {
   id: string;
   tripId: string;
-  email: string;
-  name: string | null;
   role: string;
   token: string;
   status: string;
@@ -108,15 +106,13 @@ export interface Invite {
 export interface InviteInfo {
   tripName: string;
   inviterName: string;
-  email: string;
-  name: string | null;
   role: string;
   expiresAt: string;
 }
 
 export const invitesApi = {
   list: (tripId: string) => request<Invite[]>(`/trips/${tripId}/invites`),
-  create: (tripId: string, data: { email: string; name?: string; role?: string }) =>
+  create: (tripId: string, data: { role?: string }) =>
     request<Invite>(`/trips/${tripId}/invites`, {
       method: "POST",
       body: JSON.stringify(data),

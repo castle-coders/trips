@@ -12,8 +12,6 @@ const InviteInfoSchema = z
   .object({
     tripName: z.string(),
     inviterName: z.string(),
-    email: z.string(),
-    name: z.string().nullable(),
     role: z.string(),
     expiresAt: z.string(),
   })
@@ -67,8 +65,6 @@ app.openapi(
       {
         tripName: tripRows[0]?.name ?? "Unknown trip",
         inviterName: inviterRows[0]?.name ?? "Someone",
-        email: invite.email,
-        name: invite.name ?? null,
         role: invite.role,
         expiresAt: invite.expiresAt,
       },
@@ -133,17 +129,6 @@ app.openapi(
       (p) => p.userId === authUser.id || p.email === authUser.email
     );
 
-    // If the invite has a name and the user's name was auto-derived from their
-    // email (first-login provisioning), update the user's name to the invite name.
-    let resolvedName = authUser.name;
-    if (invite.name && authUser.name === authUser.email.split("@")[0]) {
-      resolvedName = invite.name;
-      await db
-        .update(users)
-        .set({ name: resolvedName, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, authUser.id));
-    }
-
     if (!alreadyIn) {
       const now = new Date().toISOString();
       await db.insert(participants).values({
@@ -151,7 +136,7 @@ app.openapi(
         tripId: invite.tripId,
         userId: authUser.id,
         email: authUser.email,
-        name: resolvedName,
+        name: authUser.name,
         role: invite.role,
         createdAt: now,
         updatedAt: now,
@@ -164,7 +149,7 @@ app.openapi(
       .where(eq(invites.id, invite.id));
 
     return c.json(
-      { user: { id: authUser.id, email: authUser.email, name: resolvedName, role: authUser.role } },
+      { user: { id: authUser.id, email: authUser.email, name: authUser.name, role: authUser.role } },
       200
     );
   }
