@@ -36,6 +36,20 @@
       "when": 1774160000000,
       "tag": "0004_add_invite_name",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774170000000,
+      "tag": "0005_invites_remove_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1774180000000,
+      "tag": "0006_invites_participant_id",
+      "breakpoints": true
     }
   ]
 }

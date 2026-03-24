@@ -84,6 +84,7 @@ export const invites = sqliteTable("invites", {
   role: text("role").notNull().default("Viewer"), // Owner, Editor, Viewer
   token: text("token").notNull().unique(),
   status: text("status").notNull().default("pending"), // pending, accepted, expired
+  participantId: text("participant_id").references(() => participants.id, { onDelete: "set null" }),
   invitedBy: text("invited_by")
     .notNull()
     .references(() => users.id),

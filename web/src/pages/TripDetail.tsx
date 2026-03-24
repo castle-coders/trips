@@ -39,6 +39,14 @@ export function TripDetail() {
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [allUsers, setAllUsers] = useState<UserSummary[]>([]);
+  const [inviteSendingForParticipant, setInviteSendingForParticipant] = useState<Record<string, boolean>>({});
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+
+  const copyInviteLink = (id: string, link: string) => {
+    navigator.clipboard.writeText(link);
+    setCopiedInviteId(id);
+    setTimeout(() => setCopiedInviteId((cur) => cur === id ? null : cur), 2000);
+  };
 
   const load = useCallback(async () => {
     if (!tripId) return;
@@ -273,74 +281,155 @@ export function TripDetail() {
         })()}
 
         {/* Participants + pending invites */}
-        {(participants.length > 0 || pendingInvites.length > 0) && (
-          <div className="space-y-1">
-            {participants.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-light text-xs font-bold text-accent">
-                    {p.name[0]}
+        {(() => {
+          // Build a map of participantId -> pending invite for deduplication
+          const inviteByParticipantId = new Map(
+            pendingInvites.filter((inv) => inv.participantId).map((inv) => [inv.participantId!, inv])
+          );
+          // Standalone invites not linked to any participant
+          const standaloneInvites = pendingInvites.filter((inv) => !inv.participantId);
+          const total = participants.length + standaloneInvites.length;
+          if (total === 0) return null;
+          return (
+            <div className="space-y-1">
+              {participants.map((p) => {
+                const linkedInvite = inviteByParticipantId.get(p.id);
+                const hasAccount = p.userId !== null;
+                const inviteLink = linkedInvite ? `${window.location.origin}/invite/${linkedInvite.token}` : null;
+                return (
+                  <div key={p.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${hasAccount ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${hasAccount ? "bg-accent-light text-accent" : "bg-gray-100 text-gray-400"}`}>
+                        {p.name[0]}
+                      </div>
+                      <span className={`text-sm ${hasAccount ? "text-gray-700" : "text-gray-500"}`}>
+                        {p.name}{p.userId === user?.id ? " (me)" : ""}
+                      </span>
+                      {!hasAccount && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${linkedInvite ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
+                          {linkedInvite ? "Invite pending" : "No account"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {canManageParticipants ? (
+                        <>
+                          {!hasAccount && (
+                            inviteLink ? (
+                              <button
+                                type="button"
+                                onClick={() => copyInviteLink(linkedInvite!.id, inviteLink)}
+                                className={`text-xs transition-colors ${copiedInviteId === linkedInvite!.id ? "text-green-600" : "text-accent hover:text-accent-hover"}`}
+                                title={inviteLink}
+                              >
+                                {copiedInviteId === linkedInvite!.id ? "Copied!" : "Copy invite link"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={inviteSendingForParticipant[p.id]}
+                                onClick={async () => {
+                                  if (!tripId) return;
+                                  setInviteSendingForParticipant((s) => ({ ...s, [p.id]: true }));
+                                  try {
+                                    const inv = await invitesApi.create(tripId, { name: p.name, participantId: p.id });
+                                    setPendingInvites((prev) => [...prev, inv]);
+                                  } finally {
+                                    setInviteSendingForParticipant((s) => ({ ...s, [p.id]: false }));
+                                  }
+                                }}
+                                className="text-xs text-accent hover:text-accent-hover disabled:opacity-50"
+                              >
+                                Invite
+                              </button>
+                            )
+                          )}
+                          {hasAccount && (
+                            <select
+                              className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
+                              value={p.role}
+                              onChange={async (e) => {
+                                if (!tripId) return;
+                                const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
+                                setParticipants(participants.map((x) => x.id === p.id ? updated : x));
+                              }}
+                            >
+                              <option value="Viewer">Viewer</option>
+                              <option value="Editor">Editor</option>
+                              <option value="Owner">Owner</option>
+                            </select>
+                          )}
+                          {linkedInvite && (
+                            <button
+                              onClick={async () => {
+                                if (!tripId) return;
+                                await invitesApi.revoke(tripId, linkedInvite.id);
+                                setPendingInvites(pendingInvites.filter((x) => x.id !== linkedInvite.id));
+                              }}
+                              className="text-xs text-red-400 hover:text-red-600"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                          {!linkedInvite && (
+                            <button
+                              onClick={async () => {
+                                if (!tripId) return;
+                                await participantsApi.remove(tripId, p.id);
+                                setParticipants(participants.filter((x) => x.id !== p.id));
+                              }}
+                              className="text-xs text-red-400 hover:text-red-600"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400">{hasAccount ? p.role : ""}</span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-sm text-gray-700">{p.name}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {canManageParticipants ? (
-                    <>
-                      <select
-                        className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
-                        value={p.role}
-                        onChange={async (e) => {
-                          if (!tripId) return;
-                          const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
-                          setParticipants(participants.map((x) => x.id === p.id ? updated : x));
-                        }}
-                      >
-                        <option value="Viewer">Viewer</option>
-                        <option value="Editor">Editor</option>
-                        <option value="Owner">Owner</option>
-                      </select>
+                );
+              })}
+              {standaloneInvites.map((inv) => {
+                const inviteLink = `${window.location.origin}/invite/${inv.token}`;
+                return (
+                  <div key={inv.id} className="flex items-center justify-between rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-400">
+                        {inv.name ? inv.name[0] : "?"}
+                      </div>
+                      <span className="text-sm text-gray-500">{inv.name || "Invite"}</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Invite pending</span>
+                    </div>
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={async () => {
-                          if (!tripId) return;
-                          await participantsApi.remove(tripId, p.id);
-                          setParticipants(participants.filter((x) => x.id !== p.id));
-                        }}
-                        className="text-xs text-red-400 hover:text-red-600"
+                        type="button"
+                        onClick={() => copyInviteLink(inv.id, inviteLink)}
+                        className={`text-xs transition-colors ${copiedInviteId === inv.id ? "text-green-600" : "text-accent hover:text-accent-hover"}`}
+                        title={inviteLink}
                       >
-                        Remove
+                        {copiedInviteId === inv.id ? "Copied!" : "Copy invite link"}
                       </button>
-                    </>
-                  ) : (
-                    <span className="text-xs text-gray-400">{p.role}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-            {pendingInvites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-400">
-                    {inv.name ? inv.name[0] : "?"}
+                      {canManageParticipants && (
+                        <button
+                          onClick={async () => {
+                            if (!tripId) return;
+                            await invitesApi.revoke(tripId, inv.id);
+                            setPendingInvites(pendingInvites.filter((x) => x.id !== inv.id));
+                          }}
+                          className="text-xs text-red-400 hover:text-red-600"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-sm text-gray-400">{inv.name || "Invite"}</span>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Pending</span>
-                </div>
-                {canManageParticipants && (
-                  <button
-                    onClick={async () => {
-                      if (!tripId) return;
-                      await invitesApi.revoke(tripId, inv.id);
-                      setPendingInvites(pendingInvites.filter((x) => x.id !== inv.id));
-                    }}
-                    className="text-xs text-red-400 hover:text-red-600"
-                  >
-                    Revoke
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Itinerary Timeline */}

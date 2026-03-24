@@ -11,6 +11,7 @@ const InviteSchema = z
   .object({
     id: z.string(),
     tripId: z.string(),
+    participantId: z.string().nullable(),
     email: z.string().nullable(),
     name: z.string().nullable(),
     role: z.string(),
@@ -27,6 +28,7 @@ const InviteSchema = z
 const CreateInviteSchema = z
   .object({
     name: z.string().default(""),
+    participantId: z.string().optional(),
   })
   .openapi("CreateInvite");
 
@@ -96,7 +98,7 @@ app.openapi(
       return c.json({ error: "Forbidden" }, 403);
     }
 
-    const { name } = c.req.valid("json");
+    const { name, participantId } = c.req.valid("json");
 
     // Verify trip exists
     const tripRows = await db
@@ -113,6 +115,7 @@ app.openapi(
     const row = {
       id: crypto.randomUUID(),
       tripId,
+      participantId: participantId ?? null,
       email: null,
       name: name || null,
       role: "Viewer",
