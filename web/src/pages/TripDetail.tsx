@@ -292,7 +292,7 @@ export function TripDetail() {
           if (total === 0) return null;
           return (
             <div className="space-y-1">
-              {participants.map((p) => {
+              {[...participants].sort((a, b) => (a.userId ? 0 : 1) - (b.userId ? 0 : 1)).map((p) => {
                 const linkedInvite = inviteByParticipantId.get(p.id);
                 const hasAccount = p.userId !== null;
                 const inviteLink = linkedInvite ? `${window.location.origin}/invite/${linkedInvite.token}` : null;
