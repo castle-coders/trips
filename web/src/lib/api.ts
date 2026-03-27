@@ -45,10 +45,10 @@ export const participants = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  updateRole: (tripId: string, participantId: string, role: string) =>
+  update: (tripId: string, participantId: string, data: Partial<Participant>) =>
     request<Participant>(`/trips/${tripId}/participants/${participantId}`, {
       method: "PUT",
-      body: JSON.stringify({ role }),
+      body: JSON.stringify(data),
     }),
   remove: (tripId: string, participantId: string) =>
     request<void>(`/trips/${tripId}/participants/${participantId}`, { method: "DELETE" }),

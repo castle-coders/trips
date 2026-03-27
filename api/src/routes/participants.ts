@@ -86,6 +86,7 @@ app.openapi(
       email: body.email ?? null,
       name: body.name,
       role: body.role,
+      traveling: body.traveling ?? false,
       createdAt: now,
       updatedAt: now,
     };

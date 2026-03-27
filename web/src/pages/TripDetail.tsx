@@ -305,6 +305,9 @@ export function TripDetail() {
                       <span className={`text-sm ${hasAccount ? "text-gray-700" : "text-gray-500"}`}>
                         {p.name}{p.userId === user?.id ? " (me)" : ""}
                       </span>
+                      {!canManageParticipants && p.traveling && (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Traveling</span>
+                      )}
                       {!hasAccount && (
                         <span className={`rounded-full px-2 py-0.5 text-xs ${linkedInvite ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
                           {linkedInvite ? "Invite pending" : "No account"}
@@ -344,13 +347,24 @@ export function TripDetail() {
                               </button>
                             )
                           )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!tripId) return;
+                              const updated = await participantsApi.update(tripId, p.id, { traveling: !p.traveling });
+                              setParticipants(participants.map((x) => x.id === p.id ? updated : x));
+                            }}
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${p.traveling ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                          >
+                            {p.traveling ? "Traveling" : "Not traveling"}
+                          </button>
                           {hasAccount && (
                             <select
                               className="rounded border border-gray-200 bg-transparent px-2 py-0.5 text-xs text-gray-500 focus:border-accent focus:outline-none"
                               value={p.role}
                               onChange={async (e) => {
                                 if (!tripId) return;
-                                const updated = await participantsApi.updateRole(tripId, p.id, e.target.value);
+                                const updated = await participantsApi.update(tripId, p.id, { role: e.target.value as Participant["role"] });
                                 setParticipants(participants.map((x) => x.id === p.id ? updated : x));
                               }}
                             >

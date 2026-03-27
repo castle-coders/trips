@@ -42,6 +42,7 @@ export const participants = sqliteTable("participants", {
   email: text("email"),
   name: text("name").notNull(),
   role: text("role").notNull(), // Owner, Editor, Viewer
+  traveling: integer("traveling", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

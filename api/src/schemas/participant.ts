@@ -8,6 +8,7 @@ export const ParticipantSchema = z
     email: z.string().nullable(),
     name: z.string().min(1),
     role: z.enum(["Owner", "Editor", "Viewer"]),
+    traveling: z.boolean(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -19,6 +20,7 @@ export const CreateParticipantSchema = z
     email: z.string().email().optional(),
     name: z.string().min(1),
     role: z.enum(["Owner", "Editor", "Viewer"]),
+    traveling: z.boolean().optional(),
   })
   .openapi("CreateParticipant");
 
@@ -28,5 +30,6 @@ export const UpdateParticipantSchema = z
     email: z.string().email().nullable().optional(),
     name: z.string().min(1).optional(),
     role: z.enum(["Owner", "Editor", "Viewer"]).optional(),
+    traveling: z.boolean().optional(),
   })
   .openapi("UpdateParticipant");

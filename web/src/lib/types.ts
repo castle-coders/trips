@@ -16,6 +16,7 @@ export interface Participant {
   email: string | null;
   name: string;
   role: "Owner" | "Editor" | "Viewer";
+  traveling: boolean;
   createdAt: string;
   updatedAt: string;
 }
