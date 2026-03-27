@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, isNotNull, asc } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { trips, participants } from "../db/schema";
 import { TripSchema, CreateTripSchema, UpdateTripSchema } from "../schemas/trip";
@@ -31,6 +31,94 @@ app.openapi(
       .from(trips)
       .innerJoin(participants, and(eq(participants.tripId, trips.id), eq(participants.userId, user.id)));
     return c.json(result.map((r) => r.trips), 200);
+  }
+);
+
+// Upcoming trips (next 3 where end date has not passed)
+const UpcomingTripSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    startDate: z.string(),
+    endDate: z.string(),
+    participants: z.array(
+      z.object({
+        name: z.string(),
+        email: z.string().nullable(),
+      })
+    ),
+  })
+  .openapi("UpcomingTrip");
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/upcoming",
+    tags: ["Trips"],
+    responses: {
+      200: {
+        description: "Next 3 upcoming trips",
+        content: {
+          "application/json": { schema: z.array(UpcomingTripSchema) },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const db = getDb(c.env.DB);
+    const user = c.get("user");
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Get trips where endDate >= today, with dates present
+    let query = db
+      .select({ trips })
+      .from(trips)
+      .where(
+        and(
+          isNotNull(trips.endDate),
+          isNotNull(trips.startDate),
+          gte(trips.endDate, today)
+        )
+      );
+
+    if (user.role !== "admin") {
+      query = db
+        .select({ trips })
+        .from(trips)
+        .innerJoin(
+          participants,
+          and(eq(participants.tripId, trips.id), eq(participants.userId, user.id))
+        )
+        .where(
+          and(
+            isNotNull(trips.endDate),
+            isNotNull(trips.startDate),
+            gte(trips.endDate, today)
+          )
+        );
+    }
+
+    const result = await query.orderBy(asc(trips.startDate)).limit(3);
+    const tripRows = result.map((r) => r.trips);
+
+    // Fetch participants for each trip
+    const response = await Promise.all(
+      tripRows.map(async (trip) => {
+        const tripParticipants = await db
+          .select({ name: participants.name, email: participants.email })
+          .from(participants)
+          .where(eq(participants.tripId, trip.id));
+        return {
+          id: trip.id,
+          name: trip.name,
+          startDate: trip.startDate!,
+          endDate: trip.endDate!,
+          participants: tripParticipants,
+        };
+      })
+    );
+
+    return c.json(response, 200);
   }
 );
 
