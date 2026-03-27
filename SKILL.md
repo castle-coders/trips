@@ -108,6 +108,7 @@ Invites expire after 7 days. Accepting an invite adds the authenticated CF Acces
 
 ```
 GET    /trips                              — List trips (only trips the user is a participant on; admins see all)
+GET    /trips/upcoming                     — Next 3 trips where end date has not passed, ordered by start date
 GET    /trips/:tripId                      — Get trip details (404 if not a participant)
 POST   /trips                              — Create trip
 PUT    /trips/:tripId                      — Update trip (editors and owners only)
@@ -124,6 +125,23 @@ DELETE /trips/:tripId                      — Delete trip (owners and admins on
   "description": "Cherry blossom season trip"
 }
 ```
+
+**Upcoming trips response** (`GET /trips/upcoming`):
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Tokyo Spring Trip",
+    "startDate": "2026-04-10",
+    "endDate": "2026-04-20",
+    "participants": [
+      { "name": "Jane Doe", "email": "jane@example.com", "traveling": true }
+    ]
+  }
+]
+```
+
+Returns up to 3 trips where `endDate >= today`, ordered by `startDate` ascending. Only includes trips the authenticated user participates in (admins see all). Trips without dates are excluded.
 
 ### Itineraries
 
@@ -314,9 +332,12 @@ DELETE /trips/:tripId/participants/:participantId           — Remove participa
   "userId": "uuid (optional — link to an existing app user)",
   "email": "jane@example.com (optional)",
   "name": "Jane Doe",
-  "role": "Viewer"
+  "role": "Viewer",
+  "traveling": false
 }
 ```
+
+`traveling` is an optional boolean (defaults to `false`) indicating whether this participant is traveling on the trip.
 
 When adding an existing app user, provide their `userId` from `GET /auth/users`. For travelers who don't have app accounts, omit `userId` and use name/email only.
 

@@ -45,6 +45,7 @@ const UpcomingTripSchema = z
       z.object({
         name: z.string(),
         email: z.string().nullable(),
+        traveling: z.boolean(),
       })
     ),
   })
@@ -105,7 +106,7 @@ app.openapi(
     const response = await Promise.all(
       tripRows.map(async (trip) => {
         const tripParticipants = await db
-          .select({ name: participants.name, email: participants.email })
+          .select({ name: participants.name, email: participants.email, traveling: participants.traveling })
           .from(participants)
           .where(eq(participants.tripId, trip.id));
         return {
