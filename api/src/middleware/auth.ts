@@ -122,6 +122,7 @@ async function authenticateDevUser(
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
+  const path = c.req.path;
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
@@ -136,6 +137,7 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
       c.set("user", user);
       return next();
     }
+    console.log(`[auth] CF Access auth failed for path=${path}`);
   }
 
   // Dev-only bypass: accept X-Dev-User-Email header when DEV_MODE is set
@@ -161,8 +163,14 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
  */
 export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
+  const path = c.req.path;
+  const isInviteFlow = path.includes("/invite/");
+  const isLinkFlow = path.includes("/link");
+  console.log(`[jwt-only] path=${path} invite=${isInviteFlow} link=${isLinkFlow}`);
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
+  console.log(`[jwt-only] hasJwt=${!!cfJwt} hasCookie=${!!getCookie(c, "CF_Authorization")} hasHeader=${!!c.req.header("Cf-Access-Jwt-Assertion")}`);
+
   // Accept JWTs from either the main app or the invite/link app
   const audiences = [c.env.CF_ACCESS_AUDIENCE, c.env.CF_ACCESS_INVITE_AUDIENCE].filter(Boolean);
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && audiences.length > 0) {
@@ -177,22 +185,29 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
         });
 
         const email = payload.email as string | undefined;
-        if (!email) continue;
+        if (!email) {
+          console.log(`[jwt-only] no email in JWT for aud=${aud}`);
+          continue;
+        }
 
+        const isInviteAud = aud === c.env.CF_ACCESS_INVITE_AUDIENCE;
         const name = (payload.name as string | undefined) || email.split("@")[0];
+        console.log(`[jwt-only] verified email=${email} aud=${isInviteAud ? "invite" : "main"} invite=${isInviteFlow} link=${isLinkFlow}`);
         c.set("cfIdentity", { email, name });
 
         // Also resolve user if they exist
         const existing = await findUserByEmail(db, email);
+        console.log(`[jwt-only] existingUser=${!!existing}`);
         if (existing) {
           c.set("user", existing);
         }
 
         return next();
-      } catch {
-        // Try next audience
+      } catch (err: any) {
+        console.log(`[jwt-only] aud=${aud} failed: ${err.message}`);
       }
     }
+    console.log("[jwt-only] all audiences failed, returning 401");
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -200,6 +215,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
   if (c.env.DEV_MODE) {
     const devEmail = c.req.header("X-Dev-User-Email");
     if (devEmail) {
+      console.log(`[jwt-only] dev bypass email=${devEmail}`);
       const name = devEmail.split("@")[0];
       c.set("cfIdentity", { email: devEmail, name });
 
@@ -212,5 +228,6 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
     }
   }
 
+  console.log("[jwt-only] no JWT found, returning 401");
   return c.json({ error: "Unauthorized" }, 401);
 });
