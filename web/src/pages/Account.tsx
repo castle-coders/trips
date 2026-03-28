@@ -3,8 +3,6 @@ import { useAuth } from "../lib/auth";
 import { account, DEV_EMAIL_KEY, LINK_TOKEN_KEY, LINK_TOKEN_EXPIRES_KEY, type MeResponse } from "../lib/api";
 import { Link } from "react-router-dom";
 
-const CF_LOGOUT_URL = "https://trips.prenticew.com/cdn-cgi/access/logout";
-
 export function Account() {
   const { refreshUser, logout, pendingLink, confirmLink, cancelLink, linkResult, clearLinkResult } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -72,8 +70,9 @@ export function Account() {
         localStorage.removeItem(DEV_EMAIL_KEY);
         window.location.href = "/account";
       } else {
-        await fetch(CF_LOGOUT_URL, { credentials: "include" });
-        window.location.href = "/account";
+        // Navigate to logout — CF Access clears the session cookie,
+        // then redirecting to /account triggers the login screen
+        window.location.href = "/cdn-cgi/access/logout";
       }
     } catch (err: any) {
       setEmailErr(err.message);
