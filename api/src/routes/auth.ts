@@ -7,7 +7,66 @@ import { mergeAccountsD1 } from "../lib/merge";
 
 const app = new OpenAPIHono<Env>();
 
-// ── Invite endpoints (public GET, authenticated POST) ─────────
+// ── HTML helpers ─────────────────────────────────────────────
+
+function htmlPage(title: string, body: string): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title} — Trips</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 2rem; max-width: 420px; width: 100%; }
+    h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    p { color: #555; margin-bottom: 0.75rem; line-height: 1.5; }
+    .meta { font-size: 0.875rem; color: #888; }
+    .btn { display: inline-block; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 0.75rem 1.5rem; font-size: 1rem; cursor: pointer; text-decoration: none; margin-top: 1rem; }
+    .btn:hover { background: #1d4ed8; }
+    .error { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <div class="card">${body}</div>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+function htmlError(title: string, message: string, status = 404): Response {
+  const res = htmlPage(title, `<h1 class="error">${title}</h1><p>${message}</p>`);
+  return new Response(res.body, { status, headers: res.headers });
+}
+
+// ── Invite lookup helper ─────────────────────────────────────
+
+async function lookupInvite(db: ReturnType<typeof getDb>, token: string) {
+  const rows = await db
+    .select()
+    .from(invites)
+    .where(eq(invites.token, token))
+    .limit(1);
+  if (!rows.length || rows[0].status !== "pending") return null;
+  const invite = rows[0];
+  if (new Date(invite.expiresAt) < new Date()) return null;
+
+  const [tripRows, inviterRows] = await Promise.all([
+    db.select({ name: trips.name }).from(trips).where(eq(trips.id, invite.tripId)).limit(1),
+    db.select({ name: users.name }).from(users).where(eq(users.id, invite.invitedBy)).limit(1),
+  ]);
+
+  return {
+    invite,
+    tripName: tripRows[0]?.name ?? "Unknown trip",
+    inviterName: inviterRows[0]?.name ?? "Someone",
+  };
+}
+
+// ── Invite endpoints ─────────────────────────────────────────
 
 const InviteInfoSchema = z
   .object({
@@ -18,7 +77,7 @@ const InviteInfoSchema = z
   })
   .openapi("InviteInfo");
 
-// Get invite info (public — CF Access cookie is sent automatically for same-org users)
+// GET /invite/:token — returns JSON (for SPA) or HTML (for direct browser access)
 app.openapi(
   createRoute({
     method: "get",
@@ -38,39 +97,31 @@ app.openapi(
   async (c) => {
     const db = getDb(c.env.DB);
     const { token } = c.req.valid("param");
+    const result = await lookupInvite(db, token);
 
-    const rows = await db
-      .select()
-      .from(invites)
-      .where(eq(invites.token, token))
-      .limit(1);
-    if (!rows.length || rows[0].status !== "pending")
+    if (!result) {
+      const accept = c.req.header("Accept") || "";
+      if (accept.includes("text/html")) {
+        return htmlError("Invite Not Found", "This invite link is invalid or has expired.");
+      }
       return c.json({ error: "Invite not found" }, 404);
+    }
 
-    const invite = rows[0];
-    if (new Date(invite.expiresAt) < new Date())
-      return c.json({ error: "Invite has expired" }, 404);
+    const { invite, tripName, inviterName } = result;
+    const accept = c.req.header("Accept") || "";
 
-    const tripRows = await db
-      .select({ name: trips.name })
-      .from(trips)
-      .where(eq(trips.id, invite.tripId))
-      .limit(1);
-    const inviterRows = await db
-      .select({ name: users.name })
-      .from(users)
-      .where(eq(users.id, invite.invitedBy))
-      .limit(1);
+    if (accept.includes("text/html")) {
+      return htmlPage("Accept Invite", `
+        <h1>You're invited!</h1>
+        <p><strong>${inviterName}</strong> invited you to join <strong>${tripName}</strong> as ${invite.role}.</p>
+        <p class="meta">Expires ${new Date(invite.expiresAt).toLocaleDateString()}</p>
+        <form method="POST" action="/api/auth/invite/${token}/accept">
+          <button type="submit" class="btn">Accept Invite</button>
+        </form>
+      `);
+    }
 
-    return c.json(
-      {
-        tripName: tripRows[0]?.name ?? "Unknown trip",
-        inviterName: inviterRows[0]?.name ?? "Someone",
-        role: invite.role,
-        expiresAt: invite.expiresAt,
-      },
-      200
-    );
+    return c.json({ tripName, inviterName, role: invite.role, expiresAt: invite.expiresAt }, 200);
   }
 );
 
@@ -165,6 +216,20 @@ app.openapi(
       .update(invites)
       .set({ status: "accepted" })
       .where(eq(invites.id, invite.id));
+
+    // Return HTML redirect for browser form submissions, JSON for API calls
+    const accept = c.req.header("Accept") || "";
+    const contentType = c.req.header("Content-Type") || "";
+    if (accept.includes("text/html") || contentType.includes("x-www-form-urlencoded")) {
+      const tripRows = await db.select({ name: trips.name }).from(trips).where(eq(trips.id, invite.tripId)).limit(1);
+      const tripName = tripRows[0]?.name ?? "the trip";
+      return htmlPage("Invite Accepted", `
+        <h1>Welcome to ${tripName}!</h1>
+        <p>You've joined the trip. Redirecting you to the app...</p>
+        <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
+        <script>setTimeout(() => window.location.href = "https://trips.prenticew.com/", 2000);</script>
+      `);
+    }
 
     return c.json(
       { user: { id: authUser.id, email: authUser.email, name: resolvedName, role: authUser.role } },
@@ -615,6 +680,110 @@ app.openapi(
 
 // ── Account linking routes for unknown users (jwtOnlyMiddleware) ──
 
+// GET /link/:token — HTML page showing link preview + confirm button
+app.use("/link/:token", jwtOnlyMiddleware);
+app.get("/link/:token", async (c) => {
+  const db = getDb(c.env.DB);
+  const identity = c.get("cfIdentity");
+  const token = c.req.param("token");
+
+  const tokenRows = await db
+    .select()
+    .from(accountLinkTokens)
+    .where(eq(accountLinkTokens.token, token))
+    .limit(1);
+
+  if (!tokenRows.length) {
+    return htmlError("Link Not Found", "This account link is invalid or has already been used.");
+  }
+
+  const linkToken = tokenRows[0];
+  if (new Date(linkToken.expiresAt) < new Date()) {
+    await db.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
+    return htmlError("Link Expired", "This account link has expired. Please request a new one.");
+  }
+
+  const destRows = await db
+    .select({ name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.id, linkToken.userId))
+    .limit(1);
+
+  if (!destRows.length) {
+    return htmlError("Link Not Found", "The destination account no longer exists.");
+  }
+
+  const dest = destRows[0];
+  const existingUser = await findUserByEmail(db, identity.email);
+  const isSelf = existingUser ? linkToken.userId === existingUser.id : false;
+
+  if (isSelf) {
+    return htmlPage("Already Linked", `
+      <h1>Already Linked</h1>
+      <p>This link token belongs to your own account. No action needed.</p>
+      <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
+    `);
+  }
+
+  return htmlPage("Link Accounts", `
+    <h1>Link Your Account</h1>
+    <p>You're about to link your email <strong>${identity.email}</strong> to the account owned by <strong>${dest.name}</strong> (${dest.email}).</p>
+    <p>Your current account will be merged into theirs.</p>
+    <form method="POST" action="/api/auth/link/${token}/confirm">
+      <button type="submit" class="btn">Confirm Link</button>
+    </form>
+  `);
+});
+
+// POST /link/:token — performs the merge and redirects
+app.use("/link/:token/confirm", jwtOnlyMiddleware);
+app.post("/link/:token/confirm", async (c) => {
+  const db = getDb(c.env.DB);
+  const identity = c.get("cfIdentity");
+  const token = c.req.param("token");
+
+  try {
+    const rows = await db
+      .select()
+      .from(accountLinkTokens)
+      .where(eq(accountLinkTokens.token, token))
+      .limit(1);
+    if (!rows.length) {
+      return htmlError("Link Not Found", "This account link is invalid or has already been used.");
+    }
+
+    const linkToken = rows[0];
+    await db.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
+
+    if (new Date(linkToken.expiresAt) < new Date()) {
+      return htmlError("Link Expired", "This account link has expired. Please request a new one.");
+    }
+
+    const keepUserId = linkToken.userId;
+
+    let authUser = await findUserByEmail(db, identity.email);
+    if (!authUser) {
+      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+    }
+
+    if (keepUserId !== authUser.id) {
+      await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+    }
+
+    return htmlPage("Accounts Linked", `
+      <h1>Accounts Linked</h1>
+      <p>Your accounts have been merged successfully. Redirecting you to the app...</p>
+      <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
+      <script>setTimeout(() => window.location.href = "https://trips.prenticew.com/", 2000);</script>
+    `);
+  } catch (err: any) {
+    console.error("[link] Error:", err.message, err.stack);
+    return htmlError("Error", "Something went wrong while linking accounts. Please try again.", 500);
+  }
+});
+
+// ── JSON account linking routes (for SPA) ──
+
 app.use("/link-preview", jwtOnlyMiddleware);
 app.openapi(
   createRoute({
@@ -665,7 +834,6 @@ app.openapi(
 
     if (!destRows.length) return c.json({ error: "Token not found" }, 404);
 
-    // Check if this identity matches the token owner
     const existingUser = await findUserByEmail(db, identity.email);
     const isSelf = existingUser ? linkToken.userId === existingUser.id : false;
 
@@ -709,13 +877,11 @@ app.openapi(
     const { token } = c.req.valid("json");
 
     try {
-      console.log("[link] Looking up token for identity", identity.email);
       const rows = await db
         .select()
         .from(accountLinkTokens)
         .where(eq(accountLinkTokens.token, token))
         .limit(1);
-      console.log("[link] Token lookup rows:", rows.length);
       if (!rows.length) return c.json({ error: "Token not found or already used" }, 404);
 
       const linkToken = rows[0];
@@ -727,20 +893,13 @@ app.openapi(
 
       const keepUserId = linkToken.userId;
 
-      // Resolve or create the linking user
       let authUser = await findUserByEmail(db, identity.email);
       if (!authUser) {
         authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
       }
 
-      console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
-
       if (keepUserId !== authUser.id) {
-        console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
         await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
-        console.log("[link] Merge complete");
-      } else {
-        console.log("[link] Same user, no merge needed");
       }
 
       const [userRows, emailRows] = await Promise.all([
