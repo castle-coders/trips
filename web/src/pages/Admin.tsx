@@ -49,6 +49,10 @@ export function Admin() {
   };
 
   const handleDeleteUser = async (id: string) => {
+    const user = users.find((u) => u.id === id);
+    if (!window.confirm(`Are you sure you want to delete ${user?.name ?? "this user"}? This action cannot be undone.`)) {
+      return;
+    }
     await admin.deleteUser(id);
     setUsers(users.filter((u) => u.id !== id));
     setIdentities(identities.filter((i) => i.userId !== id));
