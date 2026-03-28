@@ -73,16 +73,6 @@ app.openapi(
       }
 
       let allowed = false;
-      const requestUrl = payload.request_url as string | undefined;
-
-      console.log("[eval] email:", email, "request_url:", requestUrl);
-
-      // Allow unknown users through for invite and account linking paths.
-      // The app-level auth (jwtOnlyMiddleware) validates the actual tokens.
-      const isInviteOrLinkPath = requestUrl && (
-        /\/(invite|link)/.test(requestUrl) ||
-        /\/api\/auth\/(invite|link)/.test(requestUrl)
-      );
 
       // Check 1: Is this a known user email?
       const knownEmail = await db
@@ -95,9 +85,36 @@ app.openapi(
         allowed = true;
       }
 
-      // Check 2: Is the user accessing an invite or link path?
-      if (!allowed && isInviteOrLinkPath) {
-        allowed = true;
+      // Check 2: Are there any active pending invites?
+      // CF Access doesn't pass the actual request path, so we can't tell
+      // if the user is visiting an invite link. Instead, allow unknown
+      // emails through when invites exist — the app layer validates the
+      // actual invite token before creating a user.
+      if (!allowed) {
+        const now = new Date().toISOString();
+        const pendingInvites = await db
+          .select({ id: invites.id })
+          .from(invites)
+          .where(and(eq(invites.status, "pending"), gt(invites.expiresAt, now)))
+          .limit(1);
+
+        if (pendingInvites.length > 0) {
+          allowed = true;
+        }
+      }
+
+      // Check 3: Are there any active account link tokens?
+      if (!allowed) {
+        const now = new Date().toISOString();
+        const activeTokens = await db
+          .select({ id: accountLinkTokens.id })
+          .from(accountLinkTokens)
+          .where(gt(accountLinkTokens.expiresAt, now))
+          .limit(1);
+
+        if (activeTokens.length > 0) {
+          allowed = true;
+        }
       }
 
       // Sign the response

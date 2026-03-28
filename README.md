@@ -111,8 +111,8 @@ Authentication is handled by Cloudflare Access with an External Evaluation rule 
 ### How it works
 
 1. **Known users** — the eval endpoint checks if the authenticating email exists in the `userEmails` table. If so, access is granted.
-2. **Invite/link flow** — the eval endpoint checks the `request_url` claim from the CF Access JWT. If the path contains `/invite` or `/link`, unknown emails are allowed through. The app-level `jwtOnlyMiddleware` then validates the actual invite/link token before creating a user.
-3. **Unknown users with no token** — blocked. External Evaluation returns `success: false` and CF Access denies access.
+2. **Invite/link flow** — when pending invites or active link tokens exist in the DB, unknown emails are allowed through CF Access. The app-level `jwtOnlyMiddleware` then validates the actual invite/link token before creating a user. Without a valid token, no account is created.
+3. **Unknown users, no active invites/tokens** — blocked. External Evaluation returns `success: false` and CF Access denies access.
 
 ### Cloudflare Access configuration
 
@@ -128,7 +128,7 @@ The External Evaluation rule on the "Trips" application should be configured wit
 - **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
 - **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
 
-The eval endpoint uses the `request_url` claim in the CF Access JWT to determine whether to allow unknown users (for invite/link paths) or block them.
+The eval endpoint allows unknown emails through when pending invites or active link tokens exist in the DB. The app layer validates the actual token before creating any user.
 
 ### Worker secrets
 
