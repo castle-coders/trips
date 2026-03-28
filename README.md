@@ -104,18 +104,84 @@ Key endpoint groups:
 - `GET/POST/PUT/DELETE /trips/:tripId/documents` — document attachments
 - `GET/POST/PUT/DELETE /admin/*` — user & service identity management (admins only)
 
+## Authentication & Access Control
+
+Authentication is handled by Cloudflare Access with an External Evaluation rule that restricts access to known users only. New users can only be created through invite acceptance or account linking.
+
+### How it works
+
+1. **Known users** — the eval endpoint checks if the authenticating email exists in the `userEmails` table. If so, access is granted.
+2. **Invite flow** — invite/link paths bypass the External Evaluation entirely (separate CF Access application). The app-level `jwtOnlyMiddleware` verifies the CF Access JWT and validates the invite token before creating a user.
+3. **Account linking** — same bypass as invites. The linking user's account is created on demand when they present a valid link token.
+4. **Unknown users with no token** ��� blocked. External Evaluation returns `success: false` and CF Access denies access.
+
+### Cloudflare Access configuration
+
+Three CF Access applications are required, ordered from most to least specific:
+
+| Application | Path(s) | Policy | Purpose |
+|---|---|---|---|
+| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | CF Access calls these endpoints directly during External Evaluation |
+| Trips - Invites & Linking | `trips.prenticew.com/invite/*`, `/api/auth/invite/*`, `/api/auth/link*`, `/link/*` | **Allow — Everyone** | Lets new users authenticate to accept invites or link accounts |
+| Trips | `trips.prenticew.com/*` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
+
+The External Evaluation rule on the main "Trips" application should be configured with:
+
+- **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
+- **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
+
+### Worker secrets
+
+The eval endpoint signs response JWTs with an RSA private key. Generate and store it:
+
+```bash
+# Generate RSA key pair
+openssl genrsa 2048 > private.pem
+
+# Store as Worker secret
+cd api
+wrangler secret put EXTERNAL_EVAL_PRIVATE_KEY < private.pem
+```
+
+### Environment variables
+
+Configured in `wrangler.toml` under `[vars]`:
+
+| Variable | Description |
+|---|---|
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) |
+| `CF_ACCESS_AUDIENCE` | Application Audience (AUD) tag from CF Access |
+| `BOOTSTRAP_ADMIN_EMAIL` | Email that gets admin role on first login |
+| `EXTERNAL_EVAL_KEY_ID` | Key ID for the eval JWKS (default: `eval-key-1`) |
+
+Secrets (set via `wrangler secret put`):
+
+| Secret | Description |
+|---|---|
+| `EXTERNAL_EVAL_PRIVATE_KEY` | RSA private key (PEM) for signing eval response JWTs |
+
 ## Deployment
+
+Deployment is automated via GitHub Actions on push to `main`:
+
+- **API** (`.github/workflows/deploy-api.yml`) — triggers on changes to `api/`, deploys to Cloudflare Workers
+- **Web** (`.github/workflows/deploy-web.yml`) — triggers on changes to `web/`, deploys to Cloudflare Pages
+
+GitHub Actions secrets required:
+
+| Secret | Description |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers and D1 permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
+| `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
+
+Manual deploy:
 
 ```bash
 cd api
 npm run deploy
 ```
-
-The API deploys to Cloudflare Workers with a D1 database. Configure environment variables in `wrangler.toml` or the Cloudflare dashboard:
-
-- `JWT_SECRET` — signing key for auth tokens
-- `GOOGLE_CLIENT_ID` — for Google OAuth
-- `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUDIENCE` — for Cloudflare Access service tokens
 
 ## Tech Stack
 
