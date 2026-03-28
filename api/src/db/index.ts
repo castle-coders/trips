@@ -8,6 +8,11 @@ export interface AuthUser {
   role: string;
 }
 
+export interface CfIdentity {
+  email: string;
+  name: string;
+}
+
 export type Env = {
   Bindings: {
     DB: D1Database;
@@ -15,9 +20,12 @@ export type Env = {
     CF_ACCESS_AUDIENCE: string;
     BOOTSTRAP_ADMIN_EMAIL?: string;
     DEV_MODE?: string;
+    EXTERNAL_EVAL_PRIVATE_KEY: string;
+    EXTERNAL_EVAL_KEY_ID?: string;
   };
   Variables: {
     user: AuthUser;
+    cfIdentity: CfIdentity;
   };
 };
 

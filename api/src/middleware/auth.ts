@@ -2,9 +2,11 @@ import { createMiddleware } from "hono/factory";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getCookie } from "hono/cookie";
 import { eq } from "drizzle-orm";
-import type { Env, AuthUser } from "../db";
+import type { Env, AuthUser, CfIdentity } from "../db";
 import { getDb } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
+
+export { findUserByEmail, createUserWithEmail };
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -101,15 +103,11 @@ async function authenticateCFAccess(
       };
     }
 
-    // 2. Human user — look up by any linked email, auto-create if first login
+    // 2. Human user — look up by any linked email (no auto-creation)
     const email = payload.email as string | undefined;
     if (!email) return null;
 
-    const existing = await findUserByEmail(db, email);
-    if (existing) return existing;
-
-    const name = (payload.name as string | undefined) || email.split("@")[0];
-    return createUserWithEmail(db, email, name, bootstrapAdminEmail);
+    return findUserByEmail(db, email);
   } catch {
     return null;
   }
@@ -118,13 +116,8 @@ async function authenticateCFAccess(
 async function authenticateDevUser(
   email: string,
   db: ReturnType<typeof getDb>,
-  bootstrapAdminEmail?: string
 ): Promise<AuthUser | null> {
-  const existing = await findUserByEmail(db, email);
-  if (existing) return existing;
-
-  const name = email.split("@")[0];
-  return createUserWithEmail(db, email, name, bootstrapAdminEmail);
+  return findUserByEmail(db, email);
 }
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
@@ -149,11 +142,66 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   if (c.env.DEV_MODE) {
     const devEmail = c.req.header("X-Dev-User-Email");
     if (devEmail) {
-      const user = await authenticateDevUser(devEmail, db, c.env.BOOTSTRAP_ADMIN_EMAIL);
+      const user = await authenticateDevUser(devEmail, db);
       if (user) {
         c.set("user", user);
         return next();
       }
+    }
+  }
+
+  return c.json({ error: "Unauthorized" }, 401);
+});
+
+/**
+ * Lighter middleware that verifies the CF Access JWT and extracts email/name
+ * but does NOT require the user to exist in the DB.
+ * Sets c.var.cfIdentity with { email, name }.
+ * Also sets c.var.user if the user happens to exist.
+ */
+export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
+  const db = getDb(c.env.DB);
+
+  const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
+  if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
+    try {
+      const jwks = getJWKS(c.env.CF_ACCESS_TEAM_DOMAIN);
+      const { payload } = await jwtVerify(cfJwt, jwks, {
+        issuer: `https://${c.env.CF_ACCESS_TEAM_DOMAIN}`,
+        audience: c.env.CF_ACCESS_AUDIENCE,
+      });
+
+      const email = payload.email as string | undefined;
+      if (!email) return c.json({ error: "Unauthorized" }, 401);
+
+      const name = (payload.name as string | undefined) || email.split("@")[0];
+      c.set("cfIdentity", { email, name });
+
+      // Also resolve user if they exist
+      const existing = await findUserByEmail(db, email);
+      if (existing) {
+        c.set("user", existing);
+      }
+
+      return next();
+    } catch {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+  }
+
+  // Dev-only bypass
+  if (c.env.DEV_MODE) {
+    const devEmail = c.req.header("X-Dev-User-Email");
+    if (devEmail) {
+      const name = devEmail.split("@")[0];
+      c.set("cfIdentity", { email: devEmail, name });
+
+      const existing = await findUserByEmail(db, devEmail);
+      if (existing) {
+        c.set("user", existing);
+      }
+
+      return next();
     }
   }
 

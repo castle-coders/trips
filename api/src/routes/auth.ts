@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, userEmails, accountLinkTokens, invites, participants, trips } from "../db/schema";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, jwtOnlyMiddleware, findUserByEmail, createUserWithEmail } from "../middleware/auth";
 import { mergeAccountsD1 } from "../lib/merge";
 
 const app = new OpenAPIHono<Env>();
@@ -85,8 +85,8 @@ const AuthResponseSchema = z
   })
   .openapi("AuthResponse");
 
-// Accept invite — user is already authenticated via CF Access
-app.use("/invite/:token/accept", authMiddleware);
+// Accept invite — uses jwtOnlyMiddleware so unknown users can accept invites
+app.use("/invite/:token/accept", jwtOnlyMiddleware);
 app.openapi(
   createRoute({
     method: "post",
@@ -107,8 +107,9 @@ app.openapi(
   async (c) => {
     const db = getDb(c.env.DB);
     const { token } = c.req.valid("param");
-    const authUser = c.get("user");
+    const identity = c.get("cfIdentity");
 
+    // Validate invite before creating any user
     const inviteRows = await db
       .select()
       .from(invites)
@@ -120,6 +121,12 @@ app.openapi(
     const invite = inviteRows[0];
     if (new Date(invite.expiresAt) < new Date())
       return c.json({ error: "Invite has expired" }, 404);
+
+    // Resolve or create user
+    let authUser = await findUserByEmail(db, identity.email);
+    if (!authUser) {
+      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+    }
 
     // Add as participant if not already (check all linked emails)
     const [existingPart, userEmailRows] = await Promise.all([
@@ -603,6 +610,162 @@ app.openapi(
       .from(userEmails)
       .where(eq(userEmails.userId, authUser.id));
     return c.json(updated, 200);
+  }
+);
+
+// ── Account linking routes for unknown users (jwtOnlyMiddleware) ──
+
+app.use("/link-preview", jwtOnlyMiddleware);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/link-preview",
+    tags: ["Auth"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ token: z.string() }).openapi("LinkPreviewRequest2"),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Link preview",
+        content: { "application/json": { schema: LinkPreviewSchema } },
+      },
+      404: { description: "Token not found or expired" },
+    },
+  }),
+  async (c) => {
+    const identity = c.get("cfIdentity");
+    const db = getDb(c.env.DB);
+    const { token } = c.req.valid("json");
+
+    const tokenRows = await db
+      .select()
+      .from(accountLinkTokens)
+      .where(eq(accountLinkTokens.token, token))
+      .limit(1);
+
+    if (!tokenRows.length) return c.json({ error: "Token not found" }, 404);
+
+    const linkToken = tokenRows[0];
+    if (new Date(linkToken.expiresAt) < new Date()) {
+      await db.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
+      return c.json({ error: "Token has expired" }, 404);
+    }
+
+    const destRows = await db
+      .select({ name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.id, linkToken.userId))
+      .limit(1);
+
+    if (!destRows.length) return c.json({ error: "Token not found" }, 404);
+
+    // Check if this identity matches the token owner
+    const existingUser = await findUserByEmail(db, identity.email);
+    const isSelf = existingUser ? linkToken.userId === existingUser.id : false;
+
+    return c.json(
+      {
+        destinationAccount: destRows[0],
+        isSelf,
+      },
+      200
+    );
+  }
+);
+
+app.use("/link", jwtOnlyMiddleware);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/link",
+    tags: ["Auth"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ token: z.string() }).openapi("LinkRequest2"),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Accounts merged",
+        content: { "application/json": { schema: MeResponseSchema } },
+      },
+      400: { description: "Cannot link to yourself" },
+      404: { description: "Token not found or expired" },
+    },
+  }),
+  async (c) => {
+    const identity = c.get("cfIdentity");
+    const db = getDb(c.env.DB);
+    const { token } = c.req.valid("json");
+
+    try {
+      console.log("[link] Looking up token for identity", identity.email);
+      const rows = await db
+        .select()
+        .from(accountLinkTokens)
+        .where(eq(accountLinkTokens.token, token))
+        .limit(1);
+      console.log("[link] Token lookup rows:", rows.length);
+      if (!rows.length) return c.json({ error: "Token not found or already used" }, 404);
+
+      const linkToken = rows[0];
+      await db.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
+
+      if (new Date(linkToken.expiresAt) < new Date()) {
+        return c.json({ error: "Token has expired" }, 404);
+      }
+
+      const keepUserId = linkToken.userId;
+
+      // Resolve or create the linking user
+      let authUser = await findUserByEmail(db, identity.email);
+      if (!authUser) {
+        authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+      }
+
+      console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
+
+      if (keepUserId !== authUser.id) {
+        console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
+        await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+        console.log("[link] Merge complete");
+      } else {
+        console.log("[link] Same user, no merge needed");
+      }
+
+      const [userRows, emailRows] = await Promise.all([
+        db.select().from(users).where(eq(users.id, keepUserId)).limit(1),
+        db
+          .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
+          .from(userEmails)
+          .where(eq(userEmails.userId, keepUserId)),
+      ]);
+      const u = userRows[0];
+      return c.json(
+        {
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          avatarUrl: u.avatarUrl ?? null,
+          emails: emailRows,
+        },
+        200
+      );
+    } catch (err: any) {
+      console.error("[link] Error:", err.message, err.stack);
+      return c.json({ error: err.message || "Internal server error" }, 500);
+    }
   }
 );
 
