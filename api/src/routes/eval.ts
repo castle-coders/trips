@@ -20,7 +20,7 @@ let cachedPrivateKey: CryptoKey | null = null;
 
 async function getPrivateKey(pem: string): Promise<CryptoKey> {
   if (!cachedPrivateKey) {
-    cachedPrivateKey = await importPKCS8(pem, "RS256");
+    cachedPrivateKey = await importPKCS8(pem, "RS256", { extractable: true });
   }
   return cachedPrivateKey;
 }
