@@ -81,6 +81,7 @@ app.openapi(
         .limit(1);
 
       const allowed = knownEmail.length > 0;
+      console.log(`[eval] email=${email} allowed=${allowed}`);
 
       // Sign the response
       const privateKey = await getPrivateKey(c.env.EXTERNAL_EVAL_PRIVATE_KEY);
