@@ -12,6 +12,26 @@ export const users = sqliteTable("users", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const userEmails = sqliteTable("user_emails", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull().unique(),
+  isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+});
+
+export const accountLinkTokens = sqliteTable("account_link_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const serviceIdentities = sqliteTable("service_identities", {
   id: text("id").primaryKey(),
   cfAccessSubject: text("cf_access_subject").notNull().unique(),

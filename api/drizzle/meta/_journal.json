@@ -57,6 +57,13 @@
       "when": 1774880000000,
       "tag": "0007_add_participant_traveling",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774960000000,
+      "tag": "0008_user_emails",
+      "breakpoints": true
     }
   ]
 }

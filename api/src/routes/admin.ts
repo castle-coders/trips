@@ -1,7 +1,8 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { users, serviceIdentities } from "../db/schema";
+import { users, userEmails, serviceIdentities } from "../db/schema";
+import { mergeAccounts } from "../lib/merge";
 
 const app = new OpenAPIHono<Env>();
 
@@ -82,8 +83,8 @@ app.openapi(
 
     const existing = await db
       .select()
-      .from(users)
-      .where(eq(users.email, body.email))
+      .from(userEmails)
+      .where(eq(userEmails.email, body.email))
       .limit(1);
     if (existing.length)
       return c.json({ error: "Email already exists" }, 409);
@@ -98,6 +99,13 @@ app.openapi(
       role: body.role,
       createdAt: now,
       updatedAt: now,
+    });
+    await db.insert(userEmails).values({
+      id: crypto.randomUUID(),
+      userId: id,
+      email: body.email,
+      isPrimary: true,
+      createdAt: now,
     });
 
     return c.json(
@@ -205,6 +213,80 @@ app.openapi(
 
     await db.delete(users).where(eq(users.id, userId));
     return c.body(null, 204);
+  }
+);
+
+// --- Merge Accounts ---
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/users/merge",
+    tags: ["Admin"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                keepUserId: z.string().uuid(),
+                mergeUserId: z.string().uuid(),
+              })
+              .openapi("MergeUsers"),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Accounts merged",
+        content: {
+          "application/json": {
+            schema: UserSchema.extend({
+              emails: z.array(
+                z.object({ id: z.string(), email: z.string(), isPrimary: z.boolean() })
+              ),
+            }),
+          },
+        },
+      },
+      400: { description: "Cannot merge user with themselves" },
+      404: { description: "User not found" },
+    },
+  }),
+  async (c) => {
+    const db = getDb(c.env.DB);
+    const { keepUserId, mergeUserId } = c.req.valid("json");
+
+    if (keepUserId === mergeUserId)
+      return c.json({ error: "Cannot merge user with themselves" }, 400);
+
+    try {
+      await mergeAccounts(db, keepUserId, mergeUserId);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 404);
+    }
+
+    const [userRows, emailRows] = await Promise.all([
+      db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          role: users.role,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+        })
+        .from(users)
+        .where(eq(users.id, keepUserId))
+        .limit(1),
+      db
+        .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
+        .from(userEmails)
+        .where(eq(userEmails.userId, keepUserId)),
+    ]);
+
+    return c.json({ ...userRows[0], emails: emailRows }, 200);
   }
 );
 

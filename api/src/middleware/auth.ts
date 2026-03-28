@@ -4,7 +4,7 @@ import { getCookie } from "hono/cookie";
 import { eq } from "drizzle-orm";
 import type { Env, AuthUser } from "../db";
 import { getDb } from "../db";
-import { users, serviceIdentities } from "../db/schema";
+import { users, userEmails, serviceIdentities } from "../db/schema";
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -14,6 +14,51 @@ function getJWKS(teamDomain: string) {
     jwksCache.set(teamDomain, createRemoteJWKSet(url));
   }
   return jwksCache.get(teamDomain)!;
+}
+
+/** Look up a user by any of their linked emails */
+async function findUserByEmail(
+  db: ReturnType<typeof getDb>,
+  email: string
+): Promise<AuthUser | null> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+    })
+    .from(userEmails)
+    .innerJoin(users, eq(userEmails.userId, users.id))
+    .where(eq(userEmails.email, email))
+    .limit(1);
+
+  return rows.length ? rows[0] : null;
+}
+
+/** Create a new user and their primary email entry */
+async function createUserWithEmail(
+  db: ReturnType<typeof getDb>,
+  email: string,
+  name: string,
+  bootstrapAdminEmail?: string
+): Promise<AuthUser> {
+  const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
+  const anyUser = await db.select({ id: users.id }).from(users).limit(1);
+  const role = isBootstrapAdmin || anyUser.length === 0 ? "admin" : "viewer";
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
+  await db.insert(userEmails).values({
+    id: crypto.randomUUID(),
+    userId: id,
+    email,
+    isPrimary: true,
+    createdAt: now,
+  });
+
+  return { id, email, name, role };
 }
 
 async function authenticateCFAccess(
@@ -56,36 +101,15 @@ async function authenticateCFAccess(
       };
     }
 
-    // 2. Human user — look up by email, auto-create if first login
+    // 2. Human user — look up by any linked email, auto-create if first login
     const email = payload.email as string | undefined;
     if (!email) return null;
 
-    const userRows = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const existing = await findUserByEmail(db, email);
+    if (existing) return existing;
 
-    if (userRows.length) {
-      return {
-        id: userRows[0].id,
-        email: userRows[0].email,
-        name: userRows[0].name,
-        role: userRows[0].role,
-      };
-    }
-
-    // First login — provision the user
-    const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
-    const anyUser = await db.select({ id: users.id }).from(users).limit(1);
-    const role = isBootstrapAdmin || anyUser.length === 0 ? "admin" : "viewer";
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
     const name = (payload.name as string | undefined) || email.split("@")[0];
-
-    await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
-
-    return { id, email, name, role };
+    return createUserWithEmail(db, email, name, bootstrapAdminEmail);
   } catch {
     return null;
   }
@@ -96,18 +120,11 @@ async function authenticateDevUser(
   db: ReturnType<typeof getDb>,
   bootstrapAdminEmail?: string
 ): Promise<AuthUser | null> {
-  const userRows = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  if (userRows.length) {
-    return { id: userRows[0].id, email: userRows[0].email, name: userRows[0].name, role: userRows[0].role };
-  }
-  const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
-  const anyUser = await db.select({ id: users.id }).from(users).limit(1);
-  const role = isBootstrapAdmin || anyUser.length === 0 ? "admin" : "viewer";
-  const now = new Date().toISOString();
-  const id = crypto.randomUUID();
+  const existing = await findUserByEmail(db, email);
+  if (existing) return existing;
+
   const name = email.split("@")[0];
-  await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
-  return { id, email, name, role };
+  return createUserWithEmail(db, email, name, bootstrapAdminEmail);
 }
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {

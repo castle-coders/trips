@@ -73,18 +73,43 @@ export const itineraries = {
 };
 
 // Account self-service
+export interface EmailEntry {
+  id: string;
+  email: string;
+  isPrimary: boolean;
+}
+
 export interface MeResponse {
   id: string;
   email: string;
   name: string;
   role: string;
   avatarUrl: string | null;
+  emails: EmailEntry[];
+}
+
+export const LINK_TOKEN_KEY = "account_link_token";
+export const LINK_TOKEN_EXPIRES_KEY = "account_link_token_expires";
+
+export interface LinkPreview {
+  destinationAccount: { name: string; email: string };
+  isSelf: boolean;
 }
 
 export const account = {
   getMe: () => request<MeResponse>("/auth/me"),
   updateProfile: (data: { name: string }) =>
     request<MeResponse>("/auth/me", { method: "PUT", body: JSON.stringify(data) }),
+  generateLinkToken: () =>
+    request<{ token: string; expiresAt: string }>("/auth/me/link-token", { method: "POST" }),
+  previewLinkToken: (token: string) =>
+    request<LinkPreview>("/auth/me/link-preview", { method: "POST", body: JSON.stringify({ token }) }),
+  consumeLinkToken: (token: string) =>
+    request<MeResponse>("/auth/me/link", { method: "POST", body: JSON.stringify({ token }) }),
+  removeEmail: (emailId: string) =>
+    request<EmailEntry[]>(`/auth/me/emails/${emailId}`, { method: "DELETE" }),
+  setPrimaryEmail: (emailId: string) =>
+    request<EmailEntry[]>(`/auth/me/emails/${emailId}/primary`, { method: "PUT" }),
 };
 
 // Users (authenticated, for pickers)
@@ -163,6 +188,11 @@ export const admin = {
   updateUser: (id: string, data: { name?: string; role?: string }) =>
     request<AppUser>(`/admin/users/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteUser: (id: string) => request<void>(`/admin/users/${id}`, { method: "DELETE" }),
+  mergeUsers: (keepUserId: string, mergeUserId: string) =>
+    request<AppUser & { emails: EmailEntry[] }>("/admin/users/merge", {
+      method: "POST",
+      body: JSON.stringify({ keepUserId, mergeUserId }),
+    }),
 
   listServiceIdentities: () => request<ServiceIdentity[]>("/admin/service-identities"),
   createServiceIdentity: (data: { cfAccessSubject: string; commonName: string; userId: string }) =>

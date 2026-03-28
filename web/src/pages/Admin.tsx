@@ -16,6 +16,13 @@ export function Admin() {
     role: "viewer",
   });
 
+  // Merge accounts
+  const [mergeKeep, setMergeKeep] = useState("");
+  const [mergeDrop, setMergeDrop] = useState("");
+  const [mergeMsg, setMergeMsg] = useState("");
+  const [mergeErr, setMergeErr] = useState("");
+  const [merging, setMerging] = useState(false);
+
   // New service identity form
   const [showNewIdentity, setShowNewIdentity] = useState(false);
   const [newIdentity, setNewIdentity] = useState({
@@ -50,6 +57,34 @@ export function Admin() {
   const handleRoleChange = async (id: string, role: string) => {
     const updated = await admin.updateUser(id, { role });
     setUsers(users.map((u) => (u.id === updated.id ? updated : u)));
+  };
+
+  const handleMerge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMergeMsg("");
+    setMergeErr("");
+    if (mergeKeep === mergeDrop) {
+      setMergeErr("Cannot merge a user with themselves");
+      return;
+    }
+    const keepUser = users.find((u) => u.id === mergeKeep);
+    const dropUser = users.find((u) => u.id === mergeDrop);
+    if (!confirm(`Merge "${dropUser?.name}" into "${keepUser?.name}"? This cannot be undone.`)) return;
+
+    setMerging(true);
+    try {
+      await admin.mergeUsers(mergeKeep, mergeDrop);
+      setMergeMsg(`Merged "${dropUser?.name}" into "${keepUser?.name}"`);
+      setMergeKeep("");
+      setMergeDrop("");
+      // Refresh user list
+      const refreshed = await admin.listUsers();
+      setUsers(refreshed);
+    } catch (err: any) {
+      setMergeErr(err.message);
+    } finally {
+      setMerging(false);
+    }
   };
 
   const handleCreateIdentity = async (e: React.FormEvent) => {
@@ -200,6 +235,59 @@ export function Admin() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Merge Accounts */}
+      <section className="mb-10">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Merge Accounts</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          Merge two user accounts into one. All trips, participants, and data from the merged account will be transferred to the kept account.
+        </p>
+        <form onSubmit={handleMerge} className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">Keep this account</label>
+              <select
+                className={inputClass}
+                value={mergeKeep}
+                onChange={(e) => setMergeKeep(e.target.value)}
+                required
+              >
+                <option value="">Select user to keep...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">Merge and delete this account</label>
+              <select
+                className={inputClass}
+                value={mergeDrop}
+                onChange={(e) => setMergeDrop(e.target.value)}
+                required
+              >
+                <option value="">Select user to merge...</option>
+                {users.filter((u) => u.id !== mergeKeep).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {mergeErr && <p className="text-sm text-red-600">{mergeErr}</p>}
+          {mergeMsg && <p className="text-sm text-green-600">{mergeMsg}</p>}
+          <button
+            type="submit"
+            disabled={merging || !mergeKeep || !mergeDrop}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {merging ? "Merging..." : "Merge accounts"}
+          </button>
+        </form>
       </section>
 
       {/* Service Identities */}
