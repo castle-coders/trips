@@ -9,12 +9,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     credentials: "include",
+    redirect: "manual",
     headers: {
       "Content-Type": "application/json",
       ...(devEmail ? { "X-Dev-User-Email": devEmail } : {}),
       ...init?.headers,
     },
   });
+  // CF Access redirects to its login page when session expires;
+  // with redirect: "manual" this shows as an opaque redirect instead of a CORS error
+  if (res.type === "opaqueredirect" || res.status === 0) {
+    throw new Error("Unauthorized");
+  }
   if (res.status === 204) return undefined as T;
   if (res.status === 401) {
     throw new Error("Unauthorized");
