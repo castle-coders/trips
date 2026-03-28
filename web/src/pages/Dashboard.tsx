@@ -12,15 +12,23 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const canEdit = user?.role === "admin" || user?.role === "editor";
 
+  const sortTrips = (list: Trip[]) =>
+    [...list].sort((a, b) => {
+      if (!a.startDate && !b.startDate) return 0;
+      if (!a.startDate) return 1;
+      if (!b.startDate) return -1;
+      return a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : 0;
+    });
+
   useEffect(() => {
-    tripsApi.list().then(setTrips).finally(() => setLoading(false));
+    tripsApi.list().then((data) => setTrips(sortTrips(data))).finally(() => setLoading(false));
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
     const trip = await tripsApi.create({ name: newName.trim() });
-    setTrips([trip, ...trips]);
+    setTrips(sortTrips([...trips, trip]));
     setNewName("");
     setShowCreate(false);
   };
