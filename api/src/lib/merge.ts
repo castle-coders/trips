@@ -45,6 +45,7 @@ export async function mergeAccounts(
 
   await db.transaction(async (tx) => {
     // Validate both users exist
+    console.log("[merge] Validating users:", keepUserId, mergeUserId);
     const [keepRows, mergeRows] = await Promise.all([
       tx.select().from(users).where(eq(users.id, keepUserId)).limit(1),
       tx.select().from(users).where(eq(users.id, mergeUserId)).limit(1),
@@ -54,24 +55,29 @@ export async function mergeAccounts(
 
     const keepUser = keepRows[0];
     const mergeUser = mergeRows[0];
+    console.log("[merge] Keep:", keepUser.email, "Merge:", mergeUser.email);
 
     // 1. Move emails from merge user to keep user (mark as non-primary)
+    console.log("[merge] Step 1: Moving emails");
     await tx
       .update(userEmails)
       .set({ userId: keepUserId, isPrimary: false })
       .where(eq(userEmails.userId, mergeUserId));
 
     // 2. Deduplicate participants on shared trips, then move the rest
+    console.log("[merge] Step 2: Deduplicating participants");
     const [keepParts, mergeParts] = await Promise.all([
       tx.select().from(participants).where(eq(participants.userId, keepUserId)),
       tx.select().from(participants).where(eq(participants.userId, mergeUserId)),
     ]);
+    console.log("[merge] Keep parts:", keepParts.length, "Merge parts:", mergeParts.length);
 
     const keepTripMap = new Map(keepParts.map((p) => [p.tripId, p]));
 
     for (const mp of mergeParts) {
       const kp = keepTripMap.get(mp.tripId);
       if (kp) {
+        console.log("[merge] Dedup trip:", mp.tripId);
         // Both users are participants on the same trip — keep the higher role
         const keepRank = TRIP_ROLE_RANK[kp.role] ?? 0;
         const mergeRank = TRIP_ROLE_RANK[mp.role] ?? 0;
@@ -89,6 +95,7 @@ export async function mergeAccounts(
         // Delete the duplicate participant
         await tx.delete(participants).where(eq(participants.id, mp.id));
       } else {
+        console.log("[merge] Transfer trip:", mp.tripId);
         // Only the merge user is on this trip — transfer ownership
         await tx
           .update(participants)
@@ -98,12 +105,14 @@ export async function mergeAccounts(
     }
 
     // 3. Move invites authored by the merge user
+    console.log("[merge] Step 3: Moving invites");
     await tx
       .update(invites)
       .set({ invitedBy: keepUserId })
       .where(eq(invites.invitedBy, mergeUserId));
 
     // 4. Move service identities
+    console.log("[merge] Step 4: Moving service identities");
     await tx
       .update(serviceIdentities)
       .set({ userId: keepUserId })
@@ -114,6 +123,7 @@ export async function mergeAccounts(
       const keepRank = ROLE_RANK[keepUser.role] ?? 0;
       const mergeRank = ROLE_RANK[mergeUser.role] ?? 0;
       if (mergeRank > keepRank) {
+        console.log("[merge] Step 5: Promoting role");
         await tx
           .update(users)
           .set({ role: mergeUser.role, updatedAt: new Date().toISOString() })
@@ -122,6 +132,8 @@ export async function mergeAccounts(
     }
 
     // 6. Delete merge user
+    console.log("[merge] Step 6: Deleting merge user");
     await tx.delete(users).where(eq(users.id, mergeUserId));
+    console.log("[merge] Done");
   });
 }

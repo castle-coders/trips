@@ -452,33 +452,66 @@ app.openapi(
     const db = getDb(c.env.DB);
     const { token } = c.req.valid("json");
 
-    // Atomically select + delete the token to prevent TOCTOU races
-    const linkToken = await db.transaction(async (tx) => {
-      const rows = await tx
-        .select()
-        .from(accountLinkTokens)
-        .where(eq(accountLinkTokens.token, token))
-        .limit(1);
-      if (!rows.length) return null;
-      await tx.delete(accountLinkTokens).where(eq(accountLinkTokens.id, rows[0].id));
-      return rows[0];
-    });
+    try {
+      // Atomically select + delete the token to prevent TOCTOU races
+      console.log("[link] Looking up token for user", authUser.id);
+      const linkToken = await db.transaction(async (tx) => {
+        const rows = await tx
+          .select()
+          .from(accountLinkTokens)
+          .where(eq(accountLinkTokens.token, token))
+          .limit(1);
+        console.log("[link] Token lookup rows:", rows.length);
+        if (!rows.length) return null;
+        await tx.delete(accountLinkTokens).where(eq(accountLinkTokens.id, rows[0].id));
+        return rows[0];
+      });
 
-    if (!linkToken) return c.json({ error: "Token not found or already used" }, 404);
-    if (new Date(linkToken.expiresAt) < new Date()) {
-      return c.json({ error: "Token has expired" }, 404);
-    }
+      if (!linkToken) return c.json({ error: "Token not found or already used" }, 404);
+      if (new Date(linkToken.expiresAt) < new Date()) {
+        return c.json({ error: "Token has expired" }, 404);
+      }
 
-    const keepUserId = linkToken.userId; // "account A" — the one that generated the token
+      const keepUserId = linkToken.userId; // "account A" — the one that generated the token
+      console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
 
-    if (keepUserId === authUser.id) {
-      // Same user logged back in with the same email — no merge needed
+      if (keepUserId === authUser.id) {
+        // Same user logged back in with the same email — no merge needed
+        console.log("[link] Same user, no merge needed");
+        const [userRows, emailRows] = await Promise.all([
+          db.select().from(users).where(eq(users.id, authUser.id)).limit(1),
+          db
+            .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
+            .from(userEmails)
+            .where(eq(userEmails.userId, authUser.id)),
+        ]);
+        const u = userRows[0];
+        return c.json(
+          {
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            role: u.role,
+            avatarUrl: u.avatarUrl ?? null,
+            emails: emailRows,
+          },
+          200
+        );
+      }
+
+      // Merge account B (current user) into account A (token owner)
+      // promoteRole: false — self-service linking never escalates privileges
+      console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
+      await mergeAccounts(db, keepUserId, authUser.id, { promoteRole: false });
+      console.log("[link] Merge complete");
+
+      // Return the merged account A
       const [userRows, emailRows] = await Promise.all([
-        db.select().from(users).where(eq(users.id, authUser.id)).limit(1),
+        db.select().from(users).where(eq(users.id, keepUserId)).limit(1),
         db
           .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
           .from(userEmails)
-          .where(eq(userEmails.userId, authUser.id)),
+          .where(eq(userEmails.userId, keepUserId)),
       ]);
       const u = userRows[0];
       return c.json(
@@ -492,32 +525,10 @@ app.openapi(
         },
         200
       );
+    } catch (err: any) {
+      console.error("[link] Error:", err.message, err.stack);
+      return c.json({ error: err.message || "Internal server error" }, 500);
     }
-
-    // Merge account B (current user) into account A (token owner)
-    // promoteRole: false — self-service linking never escalates privileges
-    await mergeAccounts(db, keepUserId, authUser.id, { promoteRole: false });
-
-    // Return the merged account A
-    const [userRows, emailRows] = await Promise.all([
-      db.select().from(users).where(eq(users.id, keepUserId)).limit(1),
-      db
-        .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
-        .from(userEmails)
-        .where(eq(userEmails.userId, keepUserId)),
-    ]);
-    const u = userRows[0];
-    return c.json(
-      {
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        role: u.role,
-        avatarUrl: u.avatarUrl ?? null,
-        emails: emailRows,
-      },
-      200
-    );
   }
 );
 
