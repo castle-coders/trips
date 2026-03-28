@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, userEmails, accountLinkTokens, invites, participants, trips } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
-import { mergeAccountsTx } from "../lib/merge";
+import { mergeAccountsD1 } from "../lib/merge";
 
 const app = new OpenAPIHono<Env>();
 
@@ -453,50 +453,44 @@ app.openapi(
     const { token } = c.req.valid("json");
 
     try {
-      // Run everything in a single transaction (D1 doesn't support nested transactions)
+      // D1 doesn't support BEGIN/COMMIT transactions — use sequential queries
+      // (D1 Workers requests are single-threaded, so no TOCTOU within a request)
       console.log("[link] Looking up token for user", authUser.id);
-      const result = await db.transaction(async (tx) => {
-        // Atomically select + delete the token
-        const rows = await tx
-          .select()
-          .from(accountLinkTokens)
-          .where(eq(accountLinkTokens.token, token))
-          .limit(1);
-        console.log("[link] Token lookup rows:", rows.length);
-        if (!rows.length) return { error: "Token not found or already used" as const, status: 404 as const };
-        const linkToken = rows[0];
-        await tx.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
+      const rows = await db
+        .select()
+        .from(accountLinkTokens)
+        .where(eq(accountLinkTokens.token, token))
+        .limit(1);
+      console.log("[link] Token lookup rows:", rows.length);
+      if (!rows.length) return c.json({ error: "Token not found or already used" }, 404);
 
-        if (new Date(linkToken.expiresAt) < new Date()) {
-          return { error: "Token has expired" as const, status: 404 as const };
-        }
+      const linkToken = rows[0];
+      await db.delete(accountLinkTokens).where(eq(accountLinkTokens.id, linkToken.id));
 
-        const keepUserId = linkToken.userId; // "account A" — the one that generated the token
-        console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
+      if (new Date(linkToken.expiresAt) < new Date()) {
+        return c.json({ error: "Token has expired" }, 404);
+      }
 
-        if (keepUserId !== authUser.id) {
-          // Merge account B (current user) into account A (token owner)
-          console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
-          await mergeAccountsTx(tx, keepUserId, authUser.id, { promoteRole: false });
-          console.log("[link] Merge complete");
-        } else {
-          console.log("[link] Same user, no merge needed");
-        }
+      const keepUserId = linkToken.userId; // "account A" — the one that generated the token
+      console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
 
-        const resolvedUserId = keepUserId;
-        const [userRows, emailRows] = await Promise.all([
-          tx.select().from(users).where(eq(users.id, resolvedUserId)).limit(1),
-          tx
-            .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
-            .from(userEmails)
-            .where(eq(userEmails.userId, resolvedUserId)),
-        ]);
-        return { user: userRows[0], emails: emailRows };
-      });
+      if (keepUserId !== authUser.id) {
+        // Merge account B (current user) into account A (token owner)
+        console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
+        await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+        console.log("[link] Merge complete");
+      } else {
+        console.log("[link] Same user, no merge needed");
+      }
 
-      if ("error" in result) return c.json({ error: result.error }, result.status);
-
-      const u = result.user;
+      const [userRows, emailRows] = await Promise.all([
+        db.select().from(users).where(eq(users.id, keepUserId)).limit(1),
+        db
+          .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
+          .from(userEmails)
+          .where(eq(userEmails.userId, keepUserId)),
+      ]);
+      const u = userRows[0];
       return c.json(
         {
           id: u.id,
@@ -504,7 +498,7 @@ app.openapi(
           name: u.name,
           role: u.role,
           avatarUrl: u.avatarUrl ?? null,
-          emails: result.emails,
+          emails: emailRows,
         },
         200
       );
@@ -597,20 +591,12 @@ app.openapi(
 
     if (!emailRows.length) return c.json({ error: "Email not found" }, 404);
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(userEmails)
-        .set({ isPrimary: false })
-        .where(eq(userEmails.userId, authUser.id));
-      await tx
-        .update(userEmails)
-        .set({ isPrimary: true })
-        .where(eq(userEmails.id, emailId));
-      await tx
-        .update(users)
-        .set({ email: emailRows[0].email, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, authUser.id));
-    });
+    // D1 doesn't support BEGIN/COMMIT — use batch() for atomicity
+    await db.batch([
+      db.update(userEmails).set({ isPrimary: false }).where(eq(userEmails.userId, authUser.id)),
+      db.update(userEmails).set({ isPrimary: true }).where(eq(userEmails.id, emailId)),
+      db.update(users).set({ email: emailRows[0].email, updatedAt: new Date().toISOString() }).where(eq(users.id, authUser.id)),
+    ]);
 
     const updated = await db
       .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
