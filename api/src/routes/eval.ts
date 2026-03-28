@@ -75,6 +75,8 @@ app.openapi(
       let allowed = false;
       const requestUrl = payload.request_url as string | undefined;
 
+      console.log("[eval] email:", email, "request_url:", requestUrl);
+
       // Allow unknown users through for invite and account linking paths.
       // The app-level auth (jwtOnlyMiddleware) validates the actual tokens.
       const isInviteOrLinkPath = requestUrl && (
