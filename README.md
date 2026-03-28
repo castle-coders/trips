@@ -177,7 +177,6 @@ GitHub Actions secrets required:
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
 | `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
-| `CF_ACCESS_INVITE_AUDIENCE` | AUD tag for the invite/link CF Access application |
 
 Manual deploy:
 

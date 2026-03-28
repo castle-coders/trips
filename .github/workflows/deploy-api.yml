@@ -45,4 +45,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
-          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }} --var CF_ACCESS_INVITE_AUDIENCE:${{ secrets.CF_ACCESS_INVITE_AUDIENCE }}
+          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
