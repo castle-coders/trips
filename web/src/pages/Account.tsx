@@ -70,9 +70,17 @@ export function Account() {
         localStorage.removeItem(DEV_EMAIL_KEY);
         window.location.href = "/account";
       } else {
-        // Navigate to logout — CF Access clears the session cookie,
-        // then redirecting to /account triggers the login screen
-        window.location.href = "/cdn-cgi/access/logout";
+        // Clear the CF Access session, then redirect to the server-rendered
+        // link page. That path is under the invite/link CF Access app
+        // ("Allow Everyone"), so the new (unknown) email won't be blocked
+        // by External Evaluation.
+        localStorage.removeItem(LINK_TOKEN_KEY);
+        localStorage.removeItem(LINK_TOKEN_EXPIRES_KEY);
+        const linkPath = `/api/auth/link/${token}`;
+        // Fetch logout to clear the session cookie, then navigate to the link page
+        fetch("/cdn-cgi/access/logout", { credentials: "include" }).finally(() => {
+          window.location.href = linkPath;
+        });
       }
     } catch (err: any) {
       setEmailErr(err.message);
