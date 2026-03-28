@@ -200,7 +200,7 @@ export function TripDetail() {
                   setShowInvite(false);
                 } else {
                   const inv = await invitesApi.create(tripId, { name: inviteName || undefined });
-                  const link = `${window.location.origin}/invite/${inv.token}`;
+                  const link = `${window.location.origin}/api/auth/invite/${inv.token}`;
                   setInviteSuccess(link);
                   setPendingInvites([...pendingInvites, inv]);
                   setInviteName("");
@@ -295,7 +295,7 @@ export function TripDetail() {
               {[...participants].sort((a, b) => (a.userId ? 0 : 1) - (b.userId ? 0 : 1)).map((p) => {
                 const linkedInvite = inviteByParticipantId.get(p.id);
                 const hasAccount = p.userId !== null;
-                const inviteLink = linkedInvite ? `${window.location.origin}/invite/${linkedInvite.token}` : null;
+                const inviteLink = linkedInvite ? `${window.location.origin}/api/auth/invite/${linkedInvite.token}` : null;
                 return (
                   <div key={p.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${hasAccount ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50"}`}>
                     <div className="flex items-center gap-2">
@@ -406,7 +406,7 @@ export function TripDetail() {
                 );
               })}
               {standaloneInvites.map((inv) => {
-                const inviteLink = `${window.location.origin}/invite/${inv.token}`;
+                const inviteLink = `${window.location.origin}/api/auth/invite/${inv.token}`;
                 return (
                   <div key={inv.id} className="flex items-center justify-between rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2">
                     <div className="flex items-center gap-2">
