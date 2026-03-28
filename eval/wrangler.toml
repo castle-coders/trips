@@ -1,0 +1,20 @@
+name = "trips-eval"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+routes = [
+  { pattern = "trips-eval.prenticew.com/*", zone_name = "prenticew.com" }
+]
+
+[vars]
+CF_ACCESS_TEAM_DOMAIN = "pw10n.cloudflareaccess.com"
+CF_ACCESS_AUDIENCE = "3af39f6c701b3903969a5b09993f6994dcbaff170711173d037e2bcb95c325f5"
+EXTERNAL_EVAL_KEY_ID = "eval-key-1"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trips-db"
+database_id = "PROD_DB_ID_PLACEHOLDER"

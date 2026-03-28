@@ -12,8 +12,6 @@ import expenseRoutes from "./routes/expenses";
 import documentRoutes from "./routes/documents";
 import itineraryRoutes from "./routes/itineraries";
 import inviteRoutes from "./routes/invites";
-import externalEvalRoutes from "./routes/external-eval";
-
 import { cors } from "hono/cors";
 
 const app = new OpenAPIHono<Env>();
@@ -38,8 +36,6 @@ app.use("*", cors({
 
 // Public routes (no auth required)
 app.route("/auth", authRoutes);
-app.route("/external-eval", externalEvalRoutes);
-
 // OpenAPI spec + docs (public)
 app.doc("/openapi.json", {
   openapi: "3.1.0",
