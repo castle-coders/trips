@@ -27,9 +27,9 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <img src="/favicon.png" alt="Clawdbot Logo" className="h-12 w-12" />
+          <img src="/favicon.png" alt="Clawdbot Logo" className="h-12 w-12 shrink-0" />
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Trips</h1>
             <p className="text-sm text-gray-500">
@@ -37,7 +37,7 @@ export function Dashboard() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <a
             href="/account"
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -55,7 +55,7 @@ export function Dashboard() {
           {canEdit && (
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+              className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             >
               + New Trip
             </button>
