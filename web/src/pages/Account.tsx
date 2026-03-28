@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../lib/auth";
-import { account, DEV_EMAIL_KEY, LINK_TOKEN_KEY, LINK_TOKEN_EXPIRES_KEY, type MeResponse, type EmailEntry } from "../lib/api";
+import { account, DEV_EMAIL_KEY, LINK_TOKEN_KEY, LINK_TOKEN_EXPIRES_KEY, type MeResponse } from "../lib/api";
 import { Link } from "react-router-dom";
 
 const CF_LOGOUT_URL = "https://trips.prenticew.com/cdn-cgi/access/logout";
