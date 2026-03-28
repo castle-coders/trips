@@ -111,36 +111,35 @@ Authentication is handled by Cloudflare Access with an External Evaluation rule 
 ### How it works
 
 1. **Known users** — the eval endpoint checks if the authenticating email exists in the `userEmails` table. If so, access is granted.
-2. **Invite flow** — invite/link paths bypass the External Evaluation entirely (separate CF Access application). The app-level `jwtOnlyMiddleware` verifies the CF Access JWT and validates the invite token before creating a user.
-3. **Account linking** — same bypass as invites. The linking user's account is created on demand when they present a valid link token.
-4. **Unknown users with no token** ��� blocked. External Evaluation returns `success: false` and CF Access denies access.
+2. **Invite/link flow** — the eval endpoint checks the `request_url` claim from the CF Access JWT. If the path contains `/invite` or `/link`, unknown emails are allowed through. The app-level `jwtOnlyMiddleware` then validates the actual invite/link token before creating a user.
+3. **Unknown users with no token** — blocked. External Evaluation returns `success: false` and CF Access denies access.
 
 ### Cloudflare Access configuration
 
-Three CF Access applications are required, ordered from most to least specific:
+A **single** CF Access application is required (multiple applications cause AUD/session conflicts):
 
-| Application | Path(s) | Policy | Purpose |
-|---|---|---|---|
-| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | CF Access calls these endpoints directly during External Evaluation |
-| Trips - Invites & Linking | `trips.prenticew.com/invite/*`, `/api/auth/invite/*`, `/api/auth/link*`, `/link/*` | **Allow — Everyone** | Lets new users authenticate to accept invites or link accounts |
-| Trips | `trips.prenticew.com/*` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
+| Application | Domain | Policy |
+|---|---|---|
+| Trips | `trips.prenticew.com` | **Allow — External Evaluation** |
 
-The External Evaluation rule on the main "Trips" application should be configured with:
+The External Evaluation rule should be configured with:
 
 - **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
 - **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
+
+The eval endpoint uses the `request_url` claim in the CF Access JWT to determine whether to allow unknown users (for invite/link paths) or block them.
 
 ### Worker secrets
 
 The eval endpoint signs response JWTs with an RSA private key. Generate and store it:
 
 ```bash
-# Generate RSA key pair
-openssl genrsa 2048 > private.pem
+# Generate RSA key pair (PKCS#8 format required by jose)
+openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:4096
 
 # Store as Worker secret
 cd api
-wrangler secret put EXTERNAL_EVAL_PRIVATE_KEY < private.pem
+npx wrangler secret put EXTERNAL_EVAL_PRIVATE_KEY < private.pem
 ```
 
 ### Environment variables
