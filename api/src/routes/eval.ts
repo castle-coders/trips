@@ -1,8 +1,8 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { createRemoteJWKSet, jwtVerify, importPKCS8, SignJWT, exportJWK } from "jose";
-import { eq, gt, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { userEmails, invites, accountLinkTokens } from "../db/schema";
+import { userEmails } from "../db/schema";
 
 const app = new OpenAPIHono<Env>();
 
@@ -72,50 +72,15 @@ app.openapi(
         return c.json({ error: "Missing email or nonce in token" }, 400);
       }
 
-      let allowed = false;
-
-      // Check 1: Is this a known user email?
+      // Only allow known user emails. Invite and account linking flows
+      // use a separate CF Access application with an Allow Everyone policy.
       const knownEmail = await db
         .select({ email: userEmails.email })
         .from(userEmails)
         .where(eq(userEmails.email, email))
         .limit(1);
 
-      if (knownEmail.length > 0) {
-        allowed = true;
-      }
-
-      // Check 2: Are there any active pending invites?
-      // CF Access doesn't pass the actual request path, so we can't tell
-      // if the user is visiting an invite link. Instead, allow unknown
-      // emails through when invites exist — the app layer validates the
-      // actual invite token before creating a user.
-      if (!allowed) {
-        const now = new Date().toISOString();
-        const pendingInvites = await db
-          .select({ id: invites.id })
-          .from(invites)
-          .where(and(eq(invites.status, "pending"), gt(invites.expiresAt, now)))
-          .limit(1);
-
-        if (pendingInvites.length > 0) {
-          allowed = true;
-        }
-      }
-
-      // Check 3: Are there any active account link tokens?
-      if (!allowed) {
-        const now = new Date().toISOString();
-        const activeTokens = await db
-          .select({ id: accountLinkTokens.id })
-          .from(accountLinkTokens)
-          .where(gt(accountLinkTokens.expiresAt, now))
-          .limit(1);
-
-        if (activeTokens.length > 0) {
-          allowed = true;
-        }
-      }
+      const allowed = knownEmail.length > 0;
 
       // Sign the response
       const privateKey = await getPrivateKey(c.env.EXTERNAL_EVAL_PRIVATE_KEY);

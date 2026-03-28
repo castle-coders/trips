@@ -18,6 +18,7 @@ export type Env = {
     DB: D1Database;
     CF_ACCESS_TEAM_DOMAIN: string;
     CF_ACCESS_AUDIENCE: string;
+    CF_ACCESS_INVITE_AUDIENCE: string;
     BOOTSTRAP_ADMIN_EMAIL?: string;
     DEV_MODE?: string;
     EXTERNAL_EVAL_PRIVATE_KEY: string;

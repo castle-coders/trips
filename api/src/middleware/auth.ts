@@ -163,30 +163,37 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
-  if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
-    try {
-      const jwks = getJWKS(c.env.CF_ACCESS_TEAM_DOMAIN);
-      const { payload } = await jwtVerify(cfJwt, jwks, {
-        issuer: `https://${c.env.CF_ACCESS_TEAM_DOMAIN}`,
-        audience: c.env.CF_ACCESS_AUDIENCE,
-      });
+  // Accept JWTs from either the main app or the invite/link app
+  const audiences = [c.env.CF_ACCESS_AUDIENCE, c.env.CF_ACCESS_INVITE_AUDIENCE].filter(Boolean);
+  if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && audiences.length > 0) {
+    const jwks = getJWKS(c.env.CF_ACCESS_TEAM_DOMAIN);
 
-      const email = payload.email as string | undefined;
-      if (!email) return c.json({ error: "Unauthorized" }, 401);
+    // Try each audience — the JWT will match whichever CF Access app issued it
+    for (const aud of audiences) {
+      try {
+        const { payload } = await jwtVerify(cfJwt, jwks, {
+          issuer: `https://${c.env.CF_ACCESS_TEAM_DOMAIN}`,
+          audience: aud,
+        });
 
-      const name = (payload.name as string | undefined) || email.split("@")[0];
-      c.set("cfIdentity", { email, name });
+        const email = payload.email as string | undefined;
+        if (!email) continue;
 
-      // Also resolve user if they exist
-      const existing = await findUserByEmail(db, email);
-      if (existing) {
-        c.set("user", existing);
+        const name = (payload.name as string | undefined) || email.split("@")[0];
+        c.set("cfIdentity", { email, name });
+
+        // Also resolve user if they exist
+        const existing = await findUserByEmail(db, email);
+        if (existing) {
+          c.set("user", existing);
+        }
+
+        return next();
+      } catch {
+        // Try next audience
       }
-
-      return next();
-    } catch {
-      return c.json({ error: "Unauthorized" }, 401);
     }
+    return c.json({ error: "Unauthorized" }, 401);
   }
 
   // Dev-only bypass

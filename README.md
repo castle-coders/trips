@@ -111,24 +111,25 @@ Authentication is handled by Cloudflare Access with an External Evaluation rule 
 ### How it works
 
 1. **Known users** — the eval endpoint checks if the authenticating email exists in the `userEmails` table. If so, access is granted.
-2. **Invite/link flow** — when pending invites or active link tokens exist in the DB, unknown emails are allowed through CF Access. The app-level `jwtOnlyMiddleware` then validates the actual invite/link token before creating a user. Without a valid token, no account is created.
-3. **Unknown users, no active invites/tokens** — blocked. External Evaluation returns `success: false` and CF Access denies access.
+2. **Invite/link flow** — invite and account linking paths use a separate CF Access application with an "Allow Everyone" policy. Any authenticated user can reach these endpoints. The app-level `jwtOnlyMiddleware` validates the actual invite/link token before creating a user. After completing the flow, the user must re-authenticate through the main application (where the eval now recognizes them).
+3. **Unknown users** — blocked by External Evaluation (`success: false`). CF Access denies access.
 
 ### Cloudflare Access configuration
 
-Two CF Access applications are required:
+Three CF Access applications are required:
 
-| Application | Path | Policy | Purpose |
+| Application | Path(s) | Policy | Purpose |
 |---|---|---|---|
-| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval (no user auth, no AUD conflict) |
-| Trips | `trips.prenticew.com` | **Allow — External Evaluation** | User-facing authentication with eval gate |
+| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval |
+| Trips - Invites & Linking | `trips.prenticew.com/api/auth/invite/*`, `trips.prenticew.com/api/auth/link*` | **Allow — Everyone** | Lets unknown users authenticate to accept invites or link accounts |
+| Trips | `trips.prenticew.com` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
 
 The External Evaluation rule on the "Trips" application should be configured with:
 
 - **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
 - **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
 
-The eval endpoint allows unknown emails through when pending invites or active link tokens exist in the DB. The app layer validates the actual token before creating any user.
+The `jwtOnlyMiddleware` accepts JWTs from both the main application and the invite/link application (configured via `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE`).
 
 ### Worker secrets
 
@@ -150,7 +151,8 @@ Configured in `wrangler.toml` under `[vars]`:
 | Variable | Description |
 |---|---|
 | `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) |
-| `CF_ACCESS_AUDIENCE` | Application Audience (AUD) tag from CF Access |
+| `CF_ACCESS_AUDIENCE` | AUD tag from the main "Trips" CF Access application |
+| `CF_ACCESS_INVITE_AUDIENCE` | AUD tag from the "Trips - Invites & Linking" CF Access application |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that gets admin role on first login |
 | `EXTERNAL_EVAL_KEY_ID` | Key ID for the eval JWKS (default: `eval-key-1`) |
 
@@ -175,6 +177,7 @@ GitHub Actions secrets required:
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
 | `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
+| `CF_ACCESS_INVITE_AUDIENCE` | AUD tag for the invite/link CF Access application |
 
 Manual deploy:
 
