@@ -116,13 +116,14 @@ Authentication is handled by Cloudflare Access with an External Evaluation rule 
 
 ### Cloudflare Access configuration
 
-A **single** CF Access application is required (multiple applications cause AUD/session conflicts):
+Two CF Access applications are required:
 
-| Application | Domain | Policy |
-|---|---|---|
-| Trips | `trips.prenticew.com` | **Allow — External Evaluation** |
+| Application | Path | Policy | Purpose |
+|---|---|---|---|
+| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval (no user auth, no AUD conflict) |
+| Trips | `trips.prenticew.com` | **Allow — External Evaluation** | User-facing authentication with eval gate |
 
-The External Evaluation rule should be configured with:
+The External Evaluation rule on the "Trips" application should be configured with:
 
 - **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
 - **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
