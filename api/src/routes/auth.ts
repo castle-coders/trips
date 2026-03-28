@@ -452,15 +452,19 @@ app.openapi(
     const db = getDb(c.env.DB);
     const { token } = c.req.valid("json");
 
-    // Atomically delete the token to prevent TOCTOU races
-    const deleted = await db
-      .delete(accountLinkTokens)
-      .where(eq(accountLinkTokens.token, token))
-      .returning();
+    // Atomically select + delete the token to prevent TOCTOU races
+    const linkToken = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(accountLinkTokens)
+        .where(eq(accountLinkTokens.token, token))
+        .limit(1);
+      if (!rows.length) return null;
+      await tx.delete(accountLinkTokens).where(eq(accountLinkTokens.id, rows[0].id));
+      return rows[0];
+    });
 
-    if (!deleted.length) return c.json({ error: "Token not found or already used" }, 404);
-
-    const linkToken = deleted[0];
+    if (!linkToken) return c.json({ error: "Token not found or already used" }, 404);
     if (new Date(linkToken.expiresAt) < new Date()) {
       return c.json({ error: "Token has expired" }, 404);
     }

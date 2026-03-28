@@ -75,6 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             // Different user — show confirmation UI
             setPendingLink({ token: linkToken, preview });
+            // Redirect to /account if not already there so the user sees the confirmation banner
+            if (window.location.pathname !== "/account") {
+              window.location.href = "/account";
+            }
           }
         } catch {
           // Token invalid/expired — clean up silently
