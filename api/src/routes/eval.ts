@@ -57,12 +57,11 @@ app.openapi(
     const db = getDb(c.env.DB);
 
     try {
-      // Verify the incoming CF Access JWT
+      // Verify the incoming JWT signature against CF Access JWKS
+      // The eval JWT from CF Access doesn't include iss/aud claims,
+      // so only verify the signature — not issuer or audience.
       const jwks = getJWKS(c.env.CF_ACCESS_TEAM_DOMAIN);
-      const { payload } = await jwtVerify(incomingToken, jwks, {
-        issuer: `https://${c.env.CF_ACCESS_TEAM_DOMAIN}`,
-        audience: c.env.CF_ACCESS_AUDIENCE,
-      });
+      const { payload } = await jwtVerify(incomingToken, jwks);
 
       const email = payload.email as string | undefined;
       const nonce = payload.nonce as string | undefined;
