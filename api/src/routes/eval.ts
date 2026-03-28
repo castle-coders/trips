@@ -63,10 +63,8 @@ app.openapi(
       const jwks = getJWKS(c.env.CF_ACCESS_TEAM_DOMAIN);
       const { payload } = await jwtVerify(incomingToken, jwks);
 
-      console.log("[eval] JWT payload keys:", Object.keys(payload));
-      console.log("[eval] JWT payload:", JSON.stringify(payload));
-
-      const email = payload.email as string | undefined;
+      const identity = payload.identity as { email?: string } | undefined;
+      const email = identity?.email;
       const nonce = payload.nonce as string | undefined;
 
       if (!email || !nonce) {
