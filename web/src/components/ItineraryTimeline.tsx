@@ -198,6 +198,39 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
   return entries.sort((a, b) => a.sortTime - b.sortTime);
 }
 
+function formatDayHeader(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function groupByDay(entries: TimelineEntry[]): { date: string; entries: TimelineEntry[] }[] {
+  const groups: { date: string; entries: TimelineEntry[] }[] = [];
+  let currentDate = "";
+
+  for (const entry of entries) {
+    let dayKey: string;
+    if (!isFinite(entry.sortTime)) {
+      dayKey = "Unscheduled";
+    } else {
+      const d = new Date(entry.sortTime);
+      dayKey = formatDayHeader(d);
+    }
+
+    if (dayKey !== currentDate) {
+      currentDate = dayKey;
+      groups.push({ date: dayKey, entries: [] });
+    }
+    groups[groups.length - 1].entries.push(entry);
+  }
+
+  return groups;
+}
+
 export function ItineraryTimeline({
   items,
   onEdit,
@@ -219,10 +252,18 @@ export function ItineraryTimeline({
     );
   }
 
+  const dayGroups = groupByDay(entries);
+
   return (
-    <div className="relative space-y-4">
-      <div className="absolute top-0 bottom-0 left-5 w-px bg-gray-200" />
-      {entries.map((entry) => {
+    <div className="space-y-6">
+      {dayGroups.map((group) => (
+        <div key={group.date}>
+          <h3 className="mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wide">
+            {group.date}
+          </h3>
+          <div className="relative space-y-4">
+            <div className="absolute top-0 bottom-0 left-5 w-px bg-gray-200" />
+            {group.entries.map((entry) => {
         const colorKey = entry.displayType;
         const badgeLabel = entry.displayType.startsWith("Lodging")
           ? "Lodging"
@@ -333,6 +374,9 @@ export function ItineraryTimeline({
           </div>
         );
       })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
