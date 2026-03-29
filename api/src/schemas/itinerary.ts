@@ -23,24 +23,15 @@ const FlightLeg = z.object({
   arrivalAirport: z.string(),
   arrivalTime: z.string(),
   arrivalTimeTz: z.string().optional(),
-  cabinClass: z.string().optional(),
+  fareClass: z.string().optional(),
+  baggageAllowance: z.string().optional(),
   seatAssignments: z.array(SeatAssignment).optional(),
 });
 
 const FlightContent = z
   .object({
-    airline: z.string(),
-    flightNumber: z.string(),
-    departureAirport: z.string(),
-    departureTime: z.string(),
-    departureTimeTz: z.string().optional(),
-    arrivalAirport: z.string(),
-    arrivalTime: z.string(),
-    arrivalTimeTz: z.string().optional(),
-    fareClass: z.string().optional(),
-    baggageAllowance: z.string().optional(),
     travelers: z.array(TravelerRef).optional(),
-    legs: z.array(FlightLeg).optional(),
+    legs: z.array(FlightLeg).min(1),
   })
   .openapi("FlightContent");
 
@@ -154,18 +145,8 @@ const FlightLegView = FlightLeg.omit({ seatAssignments: true }).extend({
 
 const FlightContentView = z
   .object({
-    airline: z.string(),
-    flightNumber: z.string(),
-    departureAirport: z.string(),
-    departureTime: z.string(),
-    departureTimeTz: z.string().optional(),
-    arrivalAirport: z.string(),
-    arrivalTime: z.string(),
-    arrivalTimeTz: z.string().optional(),
-    fareClass: z.string().optional(),
-    baggageAllowance: z.string().optional(),
     travelers: z.array(TravelerRefView).optional(),
-    legs: z.array(FlightLegView).optional(),
+    legs: z.array(FlightLegView).min(1),
   })
   .openapi("FlightContentView");
 

@@ -15,6 +15,50 @@ import { getTripRole } from "../middleware/tripRole";
 
 const CURRENT_SCHEMA_VERSION = 1;
 
+/**
+ * Normalize legacy flight content that stored per-leg fields at the top level.
+ * Moves them into the legs array so all code can assume the new format.
+ * Safe to remove once all data has been migrated (0009_flight_legs_normalize.sql).
+ */
+function normalizeFlightContent(row: Record<string, unknown>): Record<string, unknown> {
+  if (row.type !== "Flight") return row;
+  const content = row.content as Record<string, unknown> | undefined;
+  if (!content) return row;
+  // Old format has airline/flightNumber at the top level; new format does not
+  if (!content.airline) return row;
+
+  // Old format: top-level airline/flightNumber/etc, optional legs[] for extra legs
+  const leg0: Record<string, unknown> = {
+    airline: content.airline,
+    flightNumber: content.flightNumber,
+    departureAirport: content.departureAirport,
+    departureTime: content.departureTime,
+    departureTimeTz: content.departureTimeTz,
+    arrivalAirport: content.arrivalAirport,
+    arrivalTime: content.arrivalTime,
+    arrivalTimeTz: content.arrivalTimeTz,
+    fareClass: content.fareClass,
+    baggageAllowance: content.baggageAllowance,
+    seatAssignments: content.seatAssignments,
+  };
+
+  // Rename cabinClass→fareClass in any existing extra legs
+  const oldLegs = (content.legs as Array<Record<string, unknown>>) || [];
+  const extraLegs = oldLegs.map((l) => ({
+    ...l,
+    fareClass: l.fareClass ?? l.cabinClass,
+    cabinClass: undefined,
+  }));
+
+  return {
+    ...row,
+    content: {
+      travelers: content.travelers,
+      legs: [leg0, ...extraLegs],
+    },
+  };
+}
+
 const app = new OpenAPIHono<Env>();
 
 const tripParam = z.object({ tripId: z.string().uuid() });
@@ -70,7 +114,8 @@ app.openapi(
       .select()
       .from(itineraries)
       .where(eq(itineraries.tripId, tripId));
-    const rows = role === "Viewer" ? result.map((r) => toViewerResponse(r as any)) : result;
+    const normalized = result.map((r) => normalizeFlightContent(r as any));
+    const rows = role === "Viewer" ? normalized.map((r) => toViewerResponse(r as any)) : normalized;
     return c.json(rows as any, 200);
   }
 );
@@ -105,7 +150,8 @@ app.openapi(
         )
       );
     if (!result.length) return c.json({ error: "Not found" }, 404);
-    const row = role === "Viewer" ? toViewerResponse(result[0] as any) : result[0];
+    const normalized = normalizeFlightContent(result[0] as any);
+    const row = role === "Viewer" ? toViewerResponse(normalized as any) : normalized;
     return c.json(row, 200);
   }
 );
