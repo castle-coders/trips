@@ -105,21 +105,9 @@ function emptyLeg(): FlightLegEntry {
 function initFlightLegs(initial: Itinerary | undefined): FlightLegEntry[] {
   if (!initial?.content || initial.type !== "Flight") return [emptyLeg()];
   const c = initial.content as Record<string, unknown>;
-  // First leg comes from top-level fields
-  const first: FlightLegEntry = {
-    airline: (c.airline as string) || "",
-    flightNumber: (c.flightNumber as string) || "",
-    departureAirport: (c.departureAirport as string) || "",
-    departureTime: (c.departureTime as string) || "",
-    departureTimeTz: (c.departureTimeTz as string) || "",
-    arrivalAirport: (c.arrivalAirport as string) || "",
-    arrivalTime: (c.arrivalTime as string) || "",
-    arrivalTimeTz: (c.arrivalTimeTz as string) || "",
-    fareClass: (c.fareClass as string) || "",
-    baggageAllowance: (c.baggageAllowance as string) || "",
-  };
   const rawLegs = (c.legs as Array<Record<string, string>>) || [];
-  const rest = rawLegs.map((l) => ({
+  if (rawLegs.length === 0) return [emptyLeg()];
+  return rawLegs.map((l) => ({
     airline: l.airline || "",
     flightNumber: l.flightNumber || "",
     departureAirport: l.departureAirport || "",
@@ -128,10 +116,9 @@ function initFlightLegs(initial: Itinerary | undefined): FlightLegEntry[] {
     arrivalAirport: l.arrivalAirport || "",
     arrivalTime: l.arrivalTime || "",
     arrivalTimeTz: l.arrivalTimeTz || "",
-    fareClass: l.cabinClass || "",
-    baggageAllowance: "",
+    fareClass: l.fareClass || "",
+    baggageAllowance: l.baggageAllowance || "",
   }));
-  return [first, ...rest];
 }
 
 interface TravelerEntry {
@@ -146,9 +133,6 @@ function initTravelers(initial: Itinerary | undefined): TravelerEntry[] {
   if (!initial?.content) return [];
   const c = initial.content as Record<string, unknown>;
   const travelers = (c.travelers as Array<Record<string, string>>) || [];
-  // Top-level seatAssignments = leg 0
-  const topSeats = (c.seatAssignments as Array<Record<string, string>>) || [];
-  const topSeatMap = new Map(topSeats.map((s) => [s.participantId, s.seatNumber]));
   // Per-leg seatAssignments
   const rawLegs = (c.legs as Array<Record<string, unknown>>) || [];
   const legSeatMaps: Map<string, string>[] = rawLegs.map((leg) => {
@@ -156,14 +140,21 @@ function initTravelers(initial: Itinerary | undefined): TravelerEntry[] {
     return new Map(seats.map((s) => [s.participantId, s.seatNumber]));
   });
 
+  // Non-flight types: top-level seatAssignments
+  const topSeats = (c.seatAssignments as Array<Record<string, string>>) || [];
+  const topSeatMap = new Map(topSeats.map((s) => [s.participantId, s.seatNumber]));
+
   return travelers.map((t) => {
     const seatByLeg: Record<number, string> = {};
-    const topSeat = topSeatMap.get(t.participantId);
-    if (topSeat) seatByLeg[0] = topSeat;
-    legSeatMaps.forEach((m, i) => {
-      const seat = m.get(t.participantId);
-      if (seat) seatByLeg[i + 1] = seat;
-    });
+    if (initial?.type === "Flight") {
+      legSeatMaps.forEach((m, i) => {
+        const seat = m.get(t.participantId);
+        if (seat) seatByLeg[i] = seat;
+      });
+    } else {
+      const topSeat = topSeatMap.get(t.participantId);
+      if (topSeat) seatByLeg[0] = topSeat;
+    }
     return {
       participantId: t.participantId,
       name: t.name,
@@ -216,36 +207,22 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
       const payload: Record<string, unknown> = {};
 
       if (type === "Flight") {
-        // Build from flight legs — first leg = top-level fields
-        const first = flightLegs[0] || emptyLeg();
-        payload.airline = first.airline;
-        payload.flightNumber = first.flightNumber;
-        payload.departureAirport = first.departureAirport;
-        payload.departureTime = first.departureTime;
-        if (first.departureTimeTz) payload.departureTimeTz = first.departureTimeTz;
-        payload.arrivalAirport = first.arrivalAirport;
-        payload.arrivalTime = first.arrivalTime;
-        if (first.arrivalTimeTz) payload.arrivalTimeTz = first.arrivalTimeTz;
-        if (first.fareClass) payload.fareClass = first.fareClass;
-        if (first.baggageAllowance) payload.baggageAllowance = first.baggageAllowance;
-
-        // Additional legs
-        if (flightLegs.length > 1) {
-          payload.legs = flightLegs.slice(1).map((l) => {
-            const leg: Record<string, string> = {
-              airline: l.airline,
-              flightNumber: l.flightNumber,
-              departureAirport: l.departureAirport,
-              departureTime: l.departureTime,
-              arrivalAirport: l.arrivalAirport,
-              arrivalTime: l.arrivalTime,
-            };
-            if (l.departureTimeTz) leg.departureTimeTz = l.departureTimeTz;
-            if (l.arrivalTimeTz) leg.arrivalTimeTz = l.arrivalTimeTz;
-            if (l.fareClass) leg.cabinClass = l.fareClass;
-            return leg;
-          });
-        }
+        // All legs go in the legs array
+        payload.legs = flightLegs.map((l) => {
+          const leg: Record<string, string> = {
+            airline: l.airline,
+            flightNumber: l.flightNumber,
+            departureAirport: l.departureAirport,
+            departureTime: l.departureTime,
+            arrivalAirport: l.arrivalAirport,
+            arrivalTime: l.arrivalTime,
+          };
+          if (l.departureTimeTz) leg.departureTimeTz = l.departureTimeTz;
+          if (l.arrivalTimeTz) leg.arrivalTimeTz = l.arrivalTimeTz;
+          if (l.fareClass) leg.fareClass = l.fareClass;
+          if (l.baggageAllowance) leg.baggageAllowance = l.baggageAllowance;
+          return leg;
+        });
       } else {
         // Build payload: convert numeric fields, strip empty optional fields
         for (const f of fields) {
@@ -277,23 +254,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
         });
 
         if (type === "Flight") {
-          // Per-leg seat assignments
-          // Leg 0 seats go on top-level seatAssignments
-          const leg0Seats = travelers
-            .filter((t) => t.seatByLeg[0])
-            .map((t) => ({ participantId: t.participantId, seatNumber: t.seatByLeg[0] }));
-          if (leg0Seats.length > 0) payload.seatAssignments = leg0Seats;
-
-          // Legs 1+ seats go on each leg's seatAssignments
-          if (payload.legs) {
-            const legsArr = payload.legs as Array<Record<string, unknown>>;
-            legsArr.forEach((leg, li) => {
-              const legSeats = travelers
-                .filter((t) => t.seatByLeg[li + 1])
-                .map((t) => ({ participantId: t.participantId, seatNumber: t.seatByLeg[li + 1] }));
-              if (legSeats.length > 0) leg.seatAssignments = legSeats;
-            });
-          }
+          // Seat assignments go on each leg
+          const legsArr = payload.legs as Array<Record<string, unknown>>;
+          legsArr.forEach((leg, li) => {
+            const legSeats = travelers
+              .filter((t) => t.seatByLeg[li])
+              .map((t) => ({ participantId: t.participantId, seatNumber: t.seatByLeg[li] }));
+            if (legSeats.length > 0) leg.seatAssignments = legSeats;
+          });
         } else if (extras.includes("seatNumber")) {
           // Non-flight: single seat from seatByLeg[0]
           const seats = travelers
