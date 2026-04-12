@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   trips as tripsApi,
   participants as participantsApi,
@@ -29,6 +30,8 @@ export function TripDetail() {
   const [editingTrip, setEditingTrip] = useState(false);
   const [editingItem, setEditingItem] = useState<Itinerary | null>(null);
   const [addingItem, setAddingItem] = useState(false);
+
+  const [showParticipants, setShowParticipants] = useState(false);
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
@@ -156,9 +159,14 @@ export function TripDetail() {
       {/* Participants */}
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <button
+            type="button"
+            onClick={() => setShowParticipants((v) => !v)}
+            className="flex items-center gap-1 text-sm font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700"
+          >
             Participants
-          </h2>
+            {showParticipants ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
           {canManageParticipants && (
             <button
               onClick={() => {
@@ -175,7 +183,7 @@ export function TripDetail() {
           )}
         </div>
 
-        {canManageParticipants && showInvite && (() => {
+        {showParticipants && canManageParticipants && showInvite && (() => {
           const participantUserIds = new Set(participants.map((p) => p.userId));
           const availableUsers = allUsers.filter((u) => !participantUserIds.has(u.id));
           return (
@@ -281,7 +289,7 @@ export function TripDetail() {
         })()}
 
         {/* Participants + pending invites */}
-        {(() => {
+        {showParticipants && (() => {
           // Build a map of participantId -> pending invite for deduplication
           const inviteByParticipantId = new Map(
             pendingInvites.filter((inv) => inv.participantId).map((inv) => [inv.participantId!, inv])
