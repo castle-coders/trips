@@ -28,9 +28,7 @@ const typeFields: Record<ItineraryType, { key: string; label: string; type?: str
   Lodging: [
     { key: "propertyName", label: "Property Name", required: true },
     { key: "address", label: "Address" },
-    { key: "checkInDate", label: "Check-in Date", type: "date" },
     { key: "checkInTime", label: "Check-in Time (earliest)", type: "datetime-local", required: true },
-    { key: "checkOutDate", label: "Check-out Date", type: "date" },
     { key: "checkOutTime", label: "Check-out Time (latest)", type: "datetime-local", required: true },
     { key: "arrivalDateTime", label: "Planned Arrival", type: "datetime-local" },
     { key: "departureDateTime", label: "Planned Departure", type: "datetime-local" },
@@ -186,8 +184,19 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   const [type, setType] = useState<ItineraryType>(initial?.type || "Flight");
   const [status, setStatus] = useState<typeof STATUSES[number]>(initial?.status || "Pending");
   const [content, setContent] = useState<Record<string, string>>(
-    (initial?.content as Record<string, string>) || {}
-  );
+    () => {
+    const raw = (initial?.content as Record<string, string>) || {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      // datetime-local inputs require "YYYY-MM-DDTHH:MM" exactly — strip seconds/tz suffix
+      if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) {
+        out[k] = v.slice(0, 16);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  });
   const [confirmationNumber, setConfirmationNumber] = useState(
     initial?.confirmationNumber || ""
   );
