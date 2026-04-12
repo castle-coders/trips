@@ -317,6 +317,30 @@ export function ItineraryTimeline({
               </div>
               <h4 className="font-medium text-gray-900">{entry.title}</h4>
               <p className="text-sm text-gray-500">{entry.timeLabel}</p>
+              {(() => {
+                const c = entry.item.content as Record<string, unknown>;
+                const address =
+                  (entry.item.type === "Lodging" || entry.item.type === "Restaurant")
+                    ? (c.address as string | undefined)
+                    : entry.item.type === "Activity"
+                    ? (c.location as string | undefined)
+                    : undefined;
+                if (!address) return null;
+                return (
+                  <p className="mt-0.5 flex items-center gap-1 text-sm text-gray-500">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <a
+                      href={`https://maps.google.com/maps?q=${encodeURIComponent(address)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:underline"
+                    >
+                      {address}
+                    </a>
+                  </p>
+                );
+              })()}
               {showCost && entry.item.totalCost != null && (
                 <p className="mt-1 text-sm font-medium text-gray-700">
                   {entry.item.currency || "USD"}{" "}
