@@ -26,6 +26,7 @@ export function TripDetail() {
   const [items, setItems] = useState<Itinerary[]>([]);
   const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [editingTrip, setEditingTrip] = useState(false);
   const [editingItem, setEditingItem] = useState<Itinerary | null>(null);
   const [addingItem, setAddingItem] = useState(false);
@@ -50,17 +51,22 @@ export function TripDetail() {
 
   const load = useCallback(async () => {
     if (!tripId) return;
-    const [t, p, i, inv] = await Promise.all([
-      tripsApi.get(tripId),
-      participantsApi.list(tripId),
-      itinerariesApi.list(tripId),
-      invitesApi.list(tripId).catch(() => [] as Invite[]),
-    ]);
-    setTrip(t);
-    setParticipants(p);
-    setItems(i);
-    setPendingInvites(inv.filter((x) => x.status === "pending"));
-    setLoading(false);
+    try {
+      const [t, p, i, inv] = await Promise.all([
+        tripsApi.get(tripId),
+        participantsApi.list(tripId),
+        itinerariesApi.list(tripId),
+        invitesApi.list(tripId).catch(() => [] as Invite[]),
+      ]);
+      setTrip(t);
+      setParticipants(p);
+      setItems(i);
+      setPendingInvites(inv.filter((x) => x.status === "pending"));
+    } catch (err: any) {
+      setError(err.message || "Failed to load trip");
+    } finally {
+      setLoading(false);
+    }
   }, [tripId]);
 
   useEffect(() => {
@@ -80,6 +86,9 @@ export function TripDetail() {
 
   if (loading) {
     return <p className="py-20 text-center text-gray-400">Loading...</p>;
+  }
+  if (error) {
+    return <p className="py-20 text-center text-red-500">{error}</p>;
   }
   if (!trip) {
     return <p className="py-20 text-center text-gray-400">Trip not found.</p>;

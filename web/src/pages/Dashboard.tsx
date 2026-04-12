@@ -15,6 +15,7 @@ function isPastTrip(trip: Trip): boolean {
 export function Dashboard() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [tab, setTab] = useState<Tab>("upcoming");
@@ -34,7 +35,10 @@ export function Dashboard() {
   const visibleTrips = tab === "upcoming" ? upcomingTrips : pastTrips;
 
   useEffect(() => {
-    tripsApi.list().then((data) => setTrips(sortTrips(data))).finally(() => setLoading(false));
+    tripsApi.list()
+      .then((data) => setTrips(sortTrips(data)))
+      .catch((err) => setError(err.message || "Failed to load trips"))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -145,6 +149,8 @@ export function Dashboard() {
 
       {loading ? (
         <p className="py-20 text-center text-gray-400">Loading...</p>
+      ) : error ? (
+        <p className="py-20 text-center text-red-500">{error}</p>
       ) : trips.length === 0 ? (
         <p className="py-20 text-center text-gray-400">
           No trips yet. Create one to get started.
