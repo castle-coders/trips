@@ -7,6 +7,7 @@ export function Account() {
   const { refreshUser, logout, pendingLink, confirmLink, cancelLink, linkResult, clearLinkResult } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [name, setName] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
@@ -19,11 +20,13 @@ export function Account() {
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
-    account.getMe().then((data) => {
-      setMe(data);
-      setName(data.name);
-      setLoading(false);
-    });
+    account.getMe()
+      .then((data) => {
+        setMe(data);
+        setName(data.name);
+      })
+      .catch((err) => setError(err.message || "Failed to load account"))
+      .finally(() => setLoading(false));
   }, []);
 
   // Show merge result banner
@@ -125,7 +128,13 @@ export function Account() {
     }
   };
 
-  if (loading || !me) {
+  if (loading) {
+    return <p className="py-20 text-center text-gray-400">Loading...</p>;
+  }
+  if (error) {
+    return <p className="py-20 text-center text-red-500">{error}</p>;
+  }
+  if (!me) {
     return <p className="py-20 text-center text-gray-400">Loading...</p>;
   }
 

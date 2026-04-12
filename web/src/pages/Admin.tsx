@@ -6,6 +6,7 @@ export function Admin() {
   const [users, setUsers] = useState<AppUser[]>([]);
   const [identities, setIdentities] = useState<ServiceIdentity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   // New user form
   const [showNewUser, setShowNewUser] = useState(false);
@@ -37,6 +38,7 @@ export function Admin() {
         setUsers(u);
         setIdentities(si);
       })
+      .catch((err) => setError(err.message || "Failed to load admin data"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -109,6 +111,9 @@ export function Admin() {
 
   if (loading) {
     return <p className="py-20 text-center text-gray-400">Loading...</p>;
+  }
+  if (error) {
+    return <p className="py-20 text-center text-red-500">{error}</p>;
   }
 
   return (
