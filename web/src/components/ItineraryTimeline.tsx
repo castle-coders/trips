@@ -84,9 +84,15 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
 
     if (item.type === "Lodging") {
       const name = c.propertyName || "Lodging";
-      const arrivalTime = c.arrivalDateTime || c.checkInTime;
+      // Combine a bare time ("15:00") with a separate date field if the time lacks a date component.
+      const hasDate = (t: string) => /^\d{4}-\d{2}-\d{2}/.test(t);
+      const mergeDateTime = (date: string | undefined, time: string | undefined) =>
+        time ? (date && !hasDate(time) ? `${date}T${time}` : time) : undefined;
+      const rawCheckIn = mergeDateTime(c.checkInDate, c.checkInTime);
+      const rawCheckOut = mergeDateTime(c.checkOutDate, c.checkOutTime);
+      const arrivalTime = c.arrivalDateTime || rawCheckIn;
       const arrivalTzKey = c.arrivalDateTime ? "arrivalDateTimeTz" : "checkInTimeTz";
-      const departureTime = c.departureDateTime || c.checkOutTime;
+      const departureTime = c.departureDateTime || rawCheckOut;
       const departureTzKey = c.departureDateTime ? "departureDateTimeTz" : "checkOutTimeTz";
       // Arrival entry
       if (arrivalTime) {
