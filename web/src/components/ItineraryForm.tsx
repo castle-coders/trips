@@ -195,6 +195,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
         out[k] = v;
       }
     }
+    // Merge separate date+time fields into a single datetime-local value.
+    // Agents may store checkInDate/checkOutDate separately from the time.
+    if (out.checkInDate && out.checkInTime && !out.checkInTime.includes("T")) {
+      out.checkInTime = `${out.checkInDate}T${out.checkInTime}`;
+    }
+    if (out.checkOutDate && out.checkOutTime && !out.checkOutTime.includes("T")) {
+      out.checkOutTime = `${out.checkOutDate}T${out.checkOutTime}`;
+    }
     return out;
   });
   const [confirmationNumber, setConfirmationNumber] = useState(
