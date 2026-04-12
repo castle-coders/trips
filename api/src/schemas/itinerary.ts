@@ -39,8 +39,10 @@ const LodgingContent = z
   .object({
     propertyName: z.string(),
     address: z.string().optional(),
+    checkInDate: z.string().optional(),
     checkInTime: z.string(),
     checkInTimeTz: z.string().optional(),
+    checkOutDate: z.string().optional(),
     checkOutTime: z.string(),
     checkOutTimeTz: z.string().optional(),
     arrivalDateTime: z.string().optional(),
