@@ -8,6 +8,7 @@ export const TripSchema = z
     startDate: z.string().nullable(),
     endDate: z.string().nullable(),
     description: z.string().nullable(),
+    splitwiseGroupId: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -20,6 +21,7 @@ export const CreateTripSchema = z
     startDate: z.string().optional(),
     endDate: z.string().optional(),
     description: z.string().optional(),
+    splitwiseGroupId: z.string().optional(),
   })
   .openapi("CreateTrip");
 
@@ -30,5 +32,6 @@ export const UpdateTripSchema = z
     startDate: z.string().nullable().optional(),
     endDate: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
+    splitwiseGroupId: z.string().nullable().optional(),
   })
   .openapi("UpdateTrip");

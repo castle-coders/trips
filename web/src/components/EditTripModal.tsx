@@ -14,6 +14,7 @@ export function EditTripModal({ trip, onSave, onClose }: Props) {
     startDate: trip.startDate || "",
     endDate: trip.endDate || "",
     description: trip.description || "",
+    splitwiseGroupId: trip.splitwiseGroupId || "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -27,6 +28,7 @@ export function EditTripModal({ trip, onSave, onClose }: Props) {
         startDate: form.startDate || null,
         endDate: form.endDate || null,
         description: form.description || null,
+        splitwiseGroupId: form.splitwiseGroupId || null,
       });
       onClose();
     } finally {
@@ -104,6 +106,18 @@ export function EditTripModal({ trip, onSave, onClose }: Props) {
               value={form.description}
               onChange={(e) =>
                 setForm({ ...form, description: e.target.value })
+              }
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">
+              Splitwise Group ID
+            </span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              value={form.splitwiseGroupId}
+              onChange={(e) =>
+                setForm({ ...form, splitwiseGroupId: e.target.value })
               }
             />
           </label>
