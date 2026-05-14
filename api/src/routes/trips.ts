@@ -188,6 +188,7 @@ app.openapi(
       startDate: body.startDate ?? null,
       endDate: body.endDate ?? null,
       description: body.description ?? null,
+      splitwiseGroupId: body.splitwiseGroupId ?? null,
       createdAt: now,
       updatedAt: now,
     };

@@ -49,6 +49,7 @@ export const trips = sqliteTable("trips", {
   startDate: text("start_date"),
   endDate: text("end_date"),
   description: text("description"),
+  splitwiseGroupId: text("splitwise_group_id"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

@@ -5,6 +5,7 @@ export interface Trip {
   startDate: string | null;
   endDate: string | null;
   description: string | null;
+  splitwiseGroupId: string | null;
   createdAt: string;
   updatedAt: string;
 }
