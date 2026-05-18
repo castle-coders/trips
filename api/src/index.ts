@@ -3,6 +3,7 @@ import { apiReference } from "@scalar/hono-api-reference";
 import { authMiddleware } from "./middleware/auth";
 import { requireAdmin } from "./middleware/admin";
 import { requireTripEditor } from "./middleware/tripRole";
+import { evalRateLimit } from "./middleware/rateLimit";
 import type { Env } from "./db";
 import authRoutes from "./routes/auth";
 import adminRoutes from "./routes/admin";
@@ -37,6 +38,7 @@ app.use("*", cors({
 
 // Public routes (no auth required)
 app.route("/auth", authRoutes);
+app.use("/eval/*", evalRateLimit);
 app.route("/eval", evalRoutes);
 // OpenAPI spec + docs (public)
 app.doc("/openapi.json", {
