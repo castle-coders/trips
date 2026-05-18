@@ -40,6 +40,7 @@ interface TimelineEntry {
   displayType: string;
   title: string;
   timeLabel: string;
+  secondaryTimeLabel?: string;
   sortTime: number;
   legIndex?: number; // for flights with multiple legs
 }
@@ -88,36 +89,61 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
       const hasDate = (t: string) => /^\d{4}-\d{2}-\d{2}/.test(t);
       const mergeDateTime = (date: string | undefined, time: string | undefined) =>
         time ? (date && !hasDate(time) ? `${date}T${time}` : time) : undefined;
-      const rawCheckIn = mergeDateTime(c.checkInDate, c.checkInTime);
-      const rawCheckOut = mergeDateTime(c.checkOutDate, c.checkOutTime);
-      const arrivalTime = c.arrivalDateTime || rawCheckIn;
-      const arrivalTzKey = c.arrivalDateTime ? "arrivalDateTimeTz" : "checkInTimeTz";
-      const departureTime = c.departureDateTime || rawCheckOut;
-      const departureTzKey = c.departureDateTime ? "departureDateTimeTz" : "checkOutTimeTz";
+      const checkInDateTime = mergeDateTime(c.checkInDate, c.checkInTime);
+      const checkOutDateTime = mergeDateTime(c.checkOutDate, c.checkOutTime);
+      const arrivalDateTime = c.arrivalDateTime || undefined;
+      const departureDateTime = c.departureDateTime || undefined;
+      const arrivalSortTime = arrivalDateTime || checkInDateTime;
+      const departureSortTime = departureDateTime || checkOutDateTime;
+
+      let arrivalTimeLabel = "";
+      let arrivalSecondaryTimeLabel: string | undefined;
+      if (arrivalDateTime && checkInDateTime) {
+        arrivalTimeLabel = `Planned arrival: ${formatTime(arrivalDateTime, c.arrivalDateTimeTz || undefined)}`;
+        arrivalSecondaryTimeLabel = `Check-in: ${formatTime(checkInDateTime, c.checkInTimeTz || undefined)}`;
+      } else if (arrivalDateTime) {
+        arrivalTimeLabel = formatTime(arrivalDateTime, c.arrivalDateTimeTz || undefined);
+      } else if (checkInDateTime) {
+        arrivalTimeLabel = formatTime(checkInDateTime, c.checkInTimeTz || undefined);
+      }
+
+      let departureTimeLabel = "";
+      let departureSecondaryTimeLabel: string | undefined;
+      if (departureDateTime && checkOutDateTime) {
+        departureTimeLabel = `Planned departure: ${formatTime(departureDateTime, c.departureDateTimeTz || undefined)}`;
+        departureSecondaryTimeLabel = `Check-out: ${formatTime(checkOutDateTime, c.checkOutTimeTz || undefined)}`;
+      } else if (departureDateTime) {
+        departureTimeLabel = formatTime(departureDateTime, c.departureDateTimeTz || undefined);
+      } else if (checkOutDateTime) {
+        departureTimeLabel = formatTime(checkOutDateTime, c.checkOutTimeTz || undefined);
+      }
+
       // Arrival entry
-      if (arrivalTime) {
+      if (arrivalSortTime) {
         entries.push({
           key: `${item.id}-arrival`,
           item,
           displayType: "Lodging-arrival",
           title: `${name} — Check-in`,
-          timeLabel: formatTime(arrivalTime, c[arrivalTzKey] || undefined),
-          sortTime: new Date(arrivalTime).getTime(),
+          timeLabel: arrivalTimeLabel,
+          secondaryTimeLabel: arrivalSecondaryTimeLabel,
+          sortTime: new Date(arrivalSortTime).getTime(),
         });
       }
       // Departure entry
-      if (departureTime) {
+      if (departureSortTime) {
         entries.push({
           key: `${item.id}-departure`,
           item,
           displayType: "Lodging-departure",
           title: `${name} — Check-out`,
-          timeLabel: formatTime(departureTime, c[departureTzKey] || undefined),
-          sortTime: new Date(departureTime).getTime(),
+          timeLabel: departureTimeLabel,
+          secondaryTimeLabel: departureSecondaryTimeLabel,
+          sortTime: new Date(departureSortTime).getTime(),
         });
       }
       // Fallback if no dates at all
-      if (!arrivalTime && !departureTime) {
+      if (!arrivalSortTime && !departureSortTime) {
         entries.push({
           key: item.id,
           item,
@@ -323,6 +349,9 @@ export function ItineraryTimeline({
               </div>
               <h4 className="font-medium text-gray-900">{entry.title}</h4>
               <p className="text-sm text-gray-500">{entry.timeLabel}</p>
+              {entry.secondaryTimeLabel && (
+                <p className="text-sm text-gray-500">{entry.secondaryTimeLabel}</p>
+              )}
               {(() => {
                 const c = entry.item.content as Record<string, unknown>;
                 const address =
