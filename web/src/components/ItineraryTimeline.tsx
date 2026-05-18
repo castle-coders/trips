@@ -99,7 +99,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
       let arrivalTimeLabel = "";
       let arrivalSecondaryTimeLabel: string | undefined;
       if (arrivalDateTime && checkInDateTime) {
-        arrivalTimeLabel = `Arrival: ${formatTime(arrivalDateTime, c.arrivalDateTimeTz || undefined)}`;
+        arrivalTimeLabel = `Planned arrival: ${formatTime(arrivalDateTime, c.arrivalDateTimeTz || undefined)}`;
         arrivalSecondaryTimeLabel = `Check-in: ${formatTime(checkInDateTime, c.checkInTimeTz || undefined)}`;
       } else if (arrivalDateTime) {
         arrivalTimeLabel = formatTime(arrivalDateTime, c.arrivalDateTimeTz || undefined);
@@ -110,7 +110,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
       let departureTimeLabel = "";
       let departureSecondaryTimeLabel: string | undefined;
       if (departureDateTime && checkOutDateTime) {
-        departureTimeLabel = `Departure: ${formatTime(departureDateTime, c.departureDateTimeTz || undefined)}`;
+        departureTimeLabel = `Planned departure: ${formatTime(departureDateTime, c.departureDateTimeTz || undefined)}`;
         departureSecondaryTimeLabel = `Check-out: ${formatTime(checkOutDateTime, c.checkOutTimeTz || undefined)}`;
       } else if (departureDateTime) {
         departureTimeLabel = formatTime(departureDateTime, c.departureDateTimeTz || undefined);
