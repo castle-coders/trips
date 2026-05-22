@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Itinerary, ItineraryType, Participant } from "../lib/types";
 
 const TYPES: ItineraryType[] = [
@@ -217,6 +217,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   const [flightLegs, setFlightLegs] = useState<FlightLegEntry[]>(() => initFlightLegs(initial));
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const fields = typeFields[type];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -347,8 +355,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30">
-      <div className="flex min-h-full items-end justify-center p-4 sm:items-center">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/30"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="flex min-h-full items-end justify-center p-4 sm:items-center"
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      >
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-lg rounded-xl bg-white p-5 shadow-lg sm:p-6"
