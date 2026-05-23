@@ -331,16 +331,16 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
     onTzChange: (v: string) => void,
     required?: boolean,
   ) => (
-    <div className="flex gap-2">
+    <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
       <input
-        className={inputClass + " flex-1"}
+        className={inputClass + " w-full"}
         type="datetime-local"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
       />
       <select
-        className="w-36 shrink-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-accent focus:outline-none"
+        className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-accent focus:outline-none sm:w-36 sm:shrink-0"
         value={tzValue}
         onChange={(e) => onTzChange(e.target.value)}
       >
