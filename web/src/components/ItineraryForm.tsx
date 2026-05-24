@@ -409,7 +409,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
         {type === "Flight" && (
           <div className="mb-4 space-y-3">
             {flightLegs.map((leg, i) => (
-              <fieldset key={i} className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <fieldset key={i} className="min-w-0 space-y-3 rounded-lg border border-gray-200 p-4">
                 <legend className="px-2 text-sm font-medium text-gray-500">
                   <div className="flex items-center gap-3">
                     <span>Flight {i + 1}</span>
