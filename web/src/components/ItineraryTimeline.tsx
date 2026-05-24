@@ -45,12 +45,16 @@ interface TimelineEntry {
   legIndex?: number; // for flights with multiple legs
 }
 
+function wallClockToUTC(time: string): string {
+  const hasOffset = /[Z+\-]\d*$/.test(time);
+  return hasOffset ? time : time + "Z";
+}
+
 function formatTime(time: string, tz?: string): string {
   // The stored datetime string is a wall-clock time (as entered by the user),
   // not a UTC timestamp. Append "Z" so Date() treats it as UTC and preserves
   // the numeric values rather than reinterpreting them in the browser's locale.
-  const hasOffset = /[Z+\-]\d*$/.test(time);
-  const utcTime = hasOffset ? time : time + "Z";
+  const utcTime = wallClockToUTC(time);
   const d = new Date(utcTime);
 
   const opts: Intl.DateTimeFormatOptions = {
@@ -127,7 +131,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
           title: `${name} — Check-in`,
           timeLabel: arrivalTimeLabel,
           secondaryTimeLabel: arrivalSecondaryTimeLabel,
-          sortTime: new Date(arrivalSortTime).getTime(),
+          sortTime: new Date(wallClockToUTC(arrivalSortTime)).getTime(),
         });
       }
       // Departure entry
@@ -139,7 +143,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
           title: `${name} — Check-out`,
           timeLabel: departureTimeLabel,
           secondaryTimeLabel: departureSecondaryTimeLabel,
-          sortTime: new Date(departureSortTime).getTime(),
+          sortTime: new Date(wallClockToUTC(departureSortTime)).getTime(),
         });
       }
       // Fallback if no dates at all
@@ -180,7 +184,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
           displayType: "Flight",
           title: legTitle,
           timeLabel,
-          sortTime: time ? new Date(time).getTime() : Infinity,
+          sortTime: time ? new Date(wallClockToUTC(time)).getTime() : Infinity,
           legIndex: li,
         });
       }
@@ -223,7 +227,7 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
       displayType: item.type,
       title,
       timeLabel: time ? formatTime(time, timeTz) : "",
-      sortTime: time ? new Date(time).getTime() : Infinity,
+      sortTime: time ? new Date(wallClockToUTC(time)).getTime() : Infinity,
     });
   }
 
