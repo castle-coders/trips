@@ -333,14 +333,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   ) => (
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
       <input
-        className={inputClass + " min-w-0"}
+        className={`${inputClass} min-w-0 max-w-[calc(100vw-5rem)] sm:max-w-full`}
         type="datetime-local"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
       />
       <select
-        className="w-full min-w-0 rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-accent focus:outline-none sm:w-36 sm:shrink-0"
+        className="w-full min-w-0 max-w-[calc(100vw-5rem)] sm:max-w-full rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-accent focus:outline-none sm:w-36 sm:shrink-0"
         value={tzValue}
         onChange={(e) => onTzChange(e.target.value)}
       >
@@ -472,7 +472,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
 
         {/* Non-flight type details */}
         {type !== "Flight" && (
-          <fieldset className="mb-4 space-y-3 rounded-lg border border-gray-200 p-4">
+          <fieldset className="mb-4 min-w-0 space-y-3 rounded-lg border border-gray-200 p-4">
             <legend className="px-2 text-sm font-medium text-gray-500">
               {type} Details
             </legend>
