@@ -333,14 +333,14 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   ) => (
     <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
       <input
-        className={`${inputClass} min-w-0 max-w-[calc(100vw-5rem)] sm:max-w-full`}
+        className="w-full min-w-0 max-w-[calc(100vw-4.5rem)] sm:max-w-full rounded-lg border border-gray-300 px-1 sm:px-3 py-2 text-xs sm:text-sm focus:border-accent focus:outline-none"
         type="datetime-local"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
       />
       <select
-        className="w-full min-w-0 max-w-[calc(100vw-5rem)] sm:max-w-full rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-accent focus:outline-none sm:w-36 sm:shrink-0"
+        className="w-full min-w-0 max-w-[calc(100vw-4.5rem)] sm:max-w-full rounded-lg border border-gray-300 px-1 sm:px-2 py-2 text-xs sm:text-sm focus:border-accent focus:outline-none sm:w-36 sm:shrink-0"
         value={tzValue}
         onChange={(e) => onTzChange(e.target.value)}
       >
@@ -360,12 +360,12 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="flex min-h-full items-end justify-center p-4 sm:items-center"
+        className="flex min-h-full items-end justify-center p-2 sm:p-4 sm:items-center"
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg overflow-hidden rounded-xl bg-white p-5 shadow-lg sm:p-6"
+        className="w-full max-w-lg overflow-hidden rounded-xl bg-white p-4 shadow-lg sm:p-6"
       >
         <h2 className="mb-4 text-xl font-semibold">
           {initial ? "Edit" : "Add"} Itinerary Item
@@ -409,7 +409,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
         {type === "Flight" && (
           <div className="mb-4 space-y-3">
             {flightLegs.map((leg, i) => (
-              <fieldset key={i} className="min-w-0 space-y-3 rounded-lg border border-gray-200 p-4">
+              <fieldset key={i} className="min-w-0 space-y-3 rounded-lg border border-gray-200 p-3 sm:p-4">
                 <legend className="px-2 text-sm font-medium text-gray-500">
                   <div className="flex items-center gap-3">
                     <span>Flight {i + 1}</span>
@@ -472,7 +472,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
 
         {/* Non-flight type details */}
         {type !== "Flight" && (
-          <fieldset className="mb-4 min-w-0 space-y-3 rounded-lg border border-gray-200 p-4">
+          <fieldset className="mb-4 min-w-0 space-y-3 rounded-lg border border-gray-200 p-3 sm:p-4">
             <legend className="px-2 text-sm font-medium text-gray-500">
               {type} Details
             </legend>
