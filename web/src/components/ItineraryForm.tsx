@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Itinerary, ItineraryType, Participant } from "../lib/types";
 
 const TYPES: ItineraryType[] = [
@@ -217,13 +217,45 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   const [flightLegs, setFlightLegs] = useState<FlightLegEntry[]>(() => initFlightLegs(initial));
   const [saving, setSaving] = useState(false);
 
+  // Detect unsaved edits by comparing current state against a snapshot of the
+  // initial state captured on first render (when state equals its initializers).
+  const currentSnapshot = JSON.stringify({
+    type,
+    status,
+    content,
+    confirmationNumber,
+    totalCost,
+    currency,
+    notes,
+    travelers,
+    flightLegs,
+  });
+  const initialSnapshot = useRef<string | null>(null);
+  if (initialSnapshot.current === null) initialSnapshot.current = currentSnapshot;
+  const isDirty = initialSnapshot.current !== currentSnapshot;
+
+  const handleClose = () => {
+    if (
+      isDirty &&
+      !window.confirm("You have unsaved changes. Discard them?")
+    ) {
+      return;
+    }
+    onClose();
+  };
+
+  // Keep a ref to the latest handleClose so the Escape listener (registered
+  // once) always sees the current dirty state.
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleCloseRef.current();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   const fields = typeFields[type];
 
@@ -357,11 +389,11 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/30"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div
         className="flex min-h-full items-end justify-center p-2 sm:p-4 sm:items-center"
-        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
       >
       <form
         onSubmit={handleSubmit}
@@ -666,7 +698,7 @@ export function ItineraryForm({ initial, participants: tripParticipants, onSave,
         <div className="flex justify-end gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel

@@ -8,15 +8,30 @@ interface Props {
 }
 
 export function EditTripModal({ trip, onSave, onClose }: Props) {
-  const [form, setForm] = useState({
+  const initialForm = {
     name: trip.name,
     destination: trip.destination || "",
     startDate: trip.startDate || "",
     endDate: trip.endDate || "",
     description: trip.description || "",
     splitwiseGroupId: trip.splitwiseGroupId || "",
-  });
+  };
+  const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
+
+  const isDirty = (Object.keys(initialForm) as (keyof typeof initialForm)[]).some(
+    (k) => form[k] !== initialForm[k]
+  );
+
+  const handleClose = () => {
+    if (
+      isDirty &&
+      !window.confirm("You have unsaved changes. Discard them?")
+    ) {
+      return;
+    }
+    onClose();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,7 +140,7 @@ export function EditTripModal({ trip, onSave, onClose }: Props) {
         <div className="mt-5 flex justify-end gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel
