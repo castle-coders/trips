@@ -222,12 +222,18 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
     const time = timeKey ? c[timeKey] : "";
     const timeTz = timeKey ? c[`${timeKey}Tz`] || undefined : undefined;
 
+    // For transit-style items (Rail, Transport) show the arrival alongside the
+    // departure as "departure → arrival", matching how flight legs render.
+    const depLabel = time ? formatTime(time, timeTz) : "";
+    const arrLabel = c.arrivalTime ? formatTime(c.arrivalTime, c.arrivalTimeTz || undefined) : "";
+    const timeLabel = arrLabel ? `${depLabel} → ${arrLabel}` : depLabel;
+
     entries.push({
       key: item.id,
       item,
       displayType: item.type,
       title,
-      timeLabel: time ? formatTime(time, timeTz) : "",
+      timeLabel,
       sortTime: time ? new Date(wallClockToUTC(time)).getTime() : Infinity,
     });
   }
