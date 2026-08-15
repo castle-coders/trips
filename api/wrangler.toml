@@ -3,11 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 routes = [
-  { pattern = "trips.prenticew.com/api/*", zone_name = "prenticew.com" }
+  { pattern = "PROD_ROUTE_PLACEHOLDER", zone_name = "PROD_ZONE_PLACEHOLDER" }
 ]
 
 [vars]
-CF_ACCESS_TEAM_DOMAIN = "pw10n.cloudflareaccess.com"
+CF_ACCESS_TEAM_DOMAIN = "PROD_CF_TEAM_DOMAIN_PLACEHOLDER"
 CF_ACCESS_AUDIENCE = "3af39f6c701b3903969a5b09993f6994dcbaff170711173d037e2bcb95c325f5"
 CF_ACCESS_INVITE_AUDIENCE = "e2dee13f747a3dcbfdc479eb46d12aa62acf7217581fc256137b824f15cc1b01"
 BOOTSTRAP_ADMIN_EMAIL = "admin@trips.dev"

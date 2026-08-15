@@ -28,8 +28,12 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Inject D1 Database ID
-        run: sed -i 's/PROD_DB_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}/g' wrangler.toml
+      - name: Inject production config
+        run: |
+          sed -i 's/PROD_DB_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}/g' wrangler.toml
+          sed -i 's#PROD_ROUTE_PLACEHOLDER#${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}#g' wrangler.toml
+          sed -i 's/PROD_ZONE_PLACEHOLDER/${{ secrets.CLOUDFLARE_ZONE_NAME }}/g' wrangler.toml
+          sed -i 's/PROD_CF_TEAM_DOMAIN_PLACEHOLDER/${{ secrets.CF_ACCESS_TEAM_DOMAIN }}/g' wrangler.toml
 
       - name: Run Migrations
         uses: cloudflare/wrangler-action@v3
@@ -45,4 +49,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
-          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }} --var WEB_APP_ORIGIN:${{ secrets.WEB_APP_ORIGIN }}

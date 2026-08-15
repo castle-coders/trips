@@ -226,8 +226,8 @@ app.openapi(
       return htmlPage("Invite Accepted", `
         <h1>Welcome to ${tripName}!</h1>
         <p>You've joined the trip. Redirecting you to the app...</p>
-        <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
-        <script>setTimeout(() => window.location.href = "https://trips.prenticew.com/", 2000);</script>
+        <a href="/" class="btn">Go to Trips</a>
+        <script>setTimeout(() => window.location.href = "/", 2000);</script>
       `);
     }
 
@@ -721,7 +721,7 @@ app.get("/link/:token", async (c) => {
     return htmlPage("Already Linked", `
       <h1>Already Linked</h1>
       <p>This link token belongs to your own account. No action needed.</p>
-      <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
+      <a href="/" class="btn">Go to Trips</a>
     `);
   }
 
@@ -773,8 +773,8 @@ app.post("/link/:token/confirm", async (c) => {
     return htmlPage("Accounts Linked", `
       <h1>Accounts Linked</h1>
       <p>Your accounts have been merged successfully. Redirecting you to the app...</p>
-      <a href="https://trips.prenticew.com/" class="btn">Go to Trips</a>
-      <script>setTimeout(() => window.location.href = "https://trips.prenticew.com/", 2000);</script>
+      <a href="/" class="btn">Go to Trips</a>
+      <script>setTimeout(() => window.location.href = "/", 2000);</script>
     `);
   } catch (err: any) {
     console.error("[link] Error:", err.message, err.stack);
