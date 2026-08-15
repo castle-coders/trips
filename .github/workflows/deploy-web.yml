@@ -11,6 +11,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
     defaults:
       run:
         working-directory: ./web
@@ -32,10 +35,10 @@ jobs:
         run: npm run build
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: trips-web # Replace with your Cloudflare Pages project name
-          directory: web/dist
+          workingDirectory: 'web'
+          command: pages deploy dist --project-name=trips-web
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
