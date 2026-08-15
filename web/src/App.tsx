@@ -6,6 +6,7 @@ import { Admin } from "./pages/Admin";
 import { Account } from "./pages/Account";
 import { AcceptInvite } from "./pages/AcceptInvite";
 import { DevLogin } from "./pages/DevLogin";
+import { Footer } from "./components/Footer";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -68,6 +69,7 @@ export default function App() {
             }
           />
         </Routes>
+        <Footer />
         </DevLoginGate>
       </BrowserRouter>
     </AuthProvider>
