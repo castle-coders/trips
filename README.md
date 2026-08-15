@@ -120,14 +120,14 @@ Three CF Access applications are required:
 
 | Application | Path(s) | Policy | Purpose |
 |---|---|---|---|
-| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval |
-| Trips - Invites & Linking | `trips.prenticew.com/api/auth/invite/*`, `trips.prenticew.com/api/auth/link*` | **Allow — Everyone** | Lets unknown users authenticate to accept invites or link accounts |
-| Trips | `trips.prenticew.com` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
+| Trips - Eval | `trips.your-domain.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval |
+| Trips - Invites & Linking | `trips.your-domain.com/api/auth/invite/*`, `trips.your-domain.com/api/auth/link*` | **Allow — Everyone** | Lets unknown users authenticate to accept invites or link accounts |
+| Trips | `trips.your-domain.com` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
 
 The External Evaluation rule on the "Trips" application should be configured with:
 
-- **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
-- **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
+- **Evaluate URL**: `https://trips.your-domain.com/api/eval/evaluate`
+- **Keys URL**: `https://trips.your-domain.com/api/eval/keys`
 
 The `jwtOnlyMiddleware` accepts JWTs from both the main application and the invite/link application (configured via `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE`).
 
@@ -146,15 +146,16 @@ npx wrangler secret put EXTERNAL_EVAL_PRIVATE_KEY < private.pem
 
 ### Environment variables
 
-Configured in `wrangler.toml` under `[vars]`:
+Configured in `wrangler.toml` under `[vars]`. `CF_ACCESS_TEAM_DOMAIN` ships as a placeholder (`PROD_CF_TEAM_DOMAIN_PLACEHOLDER`) and is filled in at deploy time from a GitHub Actions secret so the production Cloudflare Access domain isn't committed to the repo:
 
 | Variable | Description |
 |---|---|
-| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) |
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) — injected at deploy time |
 | `CF_ACCESS_AUDIENCE` | AUD tag from the main "Trips" CF Access application |
 | `CF_ACCESS_INVITE_AUDIENCE` | AUD tag from the "Trips - Invites & Linking" CF Access application |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that gets admin role on first login |
 | `EXTERNAL_EVAL_KEY_ID` | Key ID for the eval JWKS (default: `eval-key-1`) |
+| `WEB_APP_ORIGIN` | Production web app origin allowed by CORS (e.g., `https://trips.your-domain.com`) — passed as a var override at deploy time, not committed |
 
 Secrets (set via `wrangler secret put`):
 
@@ -176,7 +177,11 @@ GitHub Actions secrets required:
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers and D1 permissions |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
+| `CLOUDFLARE_ROUTE_PATTERN` | Worker route pattern, e.g. `trips.your-domain.com/api/*` (injected into `wrangler.toml` at deploy time) |
+| `CLOUDFLARE_ZONE_NAME` | Cloudflare zone name, e.g. `your-domain.com` (injected into `wrangler.toml` at deploy time) |
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (injected into `wrangler.toml` at deploy time) |
 | `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
+| `WEB_APP_ORIGIN` | Production web app origin, passed as a var override during API deploy for CORS |
 
 Manual deploy:
 

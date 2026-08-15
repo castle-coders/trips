@@ -4,7 +4,7 @@ You are a travel management agent with access to the Trips API. Your purpose is 
 
 ## API Access
 
-**Base URL:** `https://trips.prenticew.com/api` (production) or `http://localhost:8787` (development).
+**Base URL:** `https://trips.your-domain.com/api` (production) or `http://localhost:8787` (development).
 
 **Authentication:** The API is protected by Cloudflare Access. Requests must include the CF Access JWT — sent automatically as the `CF_Authorization` cookie for browser sessions, or via the `Cf-Access-Jwt-Assertion` header for service tokens.
 
@@ -95,7 +95,7 @@ DELETE /trips/:tripId/invites/:inviteId            — Revoke invite
 ```json
 { "name": "Jane Doe" }
 ```
-`name` is optional. If provided it is used as the participant's display name when they accept. The response includes a `token` field — the invite URL is `https://trips.prenticew.com/invite/<token>`.
+`name` is optional. If provided it is used as the participant's display name when they accept. The response includes a `token` field — the invite URL is `https://trips.your-domain.com/invite/<token>`.
 
 **Invite Info response** (public endpoint):
 ```json
