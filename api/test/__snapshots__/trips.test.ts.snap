@@ -1,0 +1,384 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DELETE /trips/:tripId > admin 1`] = `null`;
+
+exports[`DELETE /trips/:tripId > editor 1`] = `
+{
+  "error": "Forbidden: only trip Owners can delete trips",
+}
+`;
+
+exports[`DELETE /trips/:tripId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`DELETE /trips/:tripId > owner 1`] = `null`;
+
+exports[`DELETE /trips/:tripId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`GET /trips > body shape (admin, all trips) 1`] = `
+[
+  {
+    "createdAt": "<timestamp>",
+    "description": "Fake trip for parity tests",
+    "destination": "Testville",
+    "endDate": "2090-03-08",
+    "id": "<trip>",
+    "name": "Parity Trip",
+    "splitwiseGroupId": null,
+    "startDate": "2090-03-01",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "createdAt": "<timestamp>",
+    "description": null,
+    "destination": "Elsewhere",
+    "endDate": "2091-05-03",
+    "id": "<otherTrip>",
+    "name": "Other Trip",
+    "splitwiseGroupId": null,
+    "startDate": "2091-05-01",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips > member body is the bare trip row (no role, no participants) 1`] = `
+[
+  {
+    "createdAt": "<timestamp>",
+    "description": "Fake trip for parity tests",
+    "destination": "Testville",
+    "endDate": "2090-03-08",
+    "id": "<trip>",
+    "name": "Parity Trip",
+    "splitwiseGroupId": null,
+    "startDate": "2090-03-01",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId > admin 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Fake trip for parity tests",
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Parity Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId > editor 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Fake trip for parity tests",
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Parity Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId > non-uuid tripId is a 400 zod validation error 1`] = `
+{
+  "error": {
+    "message": "[
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "uuid",
+    "pattern": "/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/",
+    "path": [
+      "tripId"
+    ],
+    "message": "Invalid UUID"
+  }
+]",
+    "name": "ZodError",
+  },
+  "success": false,
+}
+`;
+
+exports[`GET /trips/:tripId > outsider 1`] = `
+{
+  "error": "Trip not found",
+}
+`;
+
+exports[`GET /trips/:tripId > owner 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Fake trip for parity tests",
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Parity Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId > viewer 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Fake trip for parity tests",
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Parity Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/upcoming > body shape includes every participant's name/email/traveling (owner) 1`] = `
+[
+  {
+    "endDate": "2090-03-08",
+    "id": "<trip>",
+    "name": "Parity Trip",
+    "participants": [
+      {
+        "email": "owner@example.test",
+        "name": "Owner User",
+        "traveling": true,
+      },
+      {
+        "email": "editor@example.test",
+        "name": "Editor User",
+        "traveling": true,
+      },
+      {
+        "email": "viewer@example.test",
+        "name": "Viewer User",
+        "traveling": false,
+      },
+      {
+        "email": null,
+        "name": "Guest Traveler",
+        "traveling": true,
+      },
+    ],
+    "startDate": "2090-03-01",
+  },
+  {
+    "endDate": "2092-01-02",
+    "id": "<f2092>",
+    "name": "F2092",
+    "participants": [
+      {
+        "email": "owner@example.test",
+        "name": "Owner User",
+        "traveling": true,
+      },
+    ],
+    "startDate": "2092-01-01",
+  },
+  {
+    "endDate": "2093-01-02",
+    "id": "<f2093>",
+    "name": "F2093",
+    "participants": [
+      {
+        "email": "owner@example.test",
+        "name": "Owner User",
+        "traveling": true,
+      },
+    ],
+    "startDate": "2093-01-01",
+  },
+]
+`;
+
+exports[`GET /trips/upcoming > viewer sees the same participant list (including emails) as the owner 1`] = `
+[
+  {
+    "endDate": "2090-03-08",
+    "id": "<trip>",
+    "name": "Parity Trip",
+    "participants": [
+      {
+        "email": "owner@example.test",
+        "name": "Owner User",
+        "traveling": true,
+      },
+      {
+        "email": "editor@example.test",
+        "name": "Editor User",
+        "traveling": true,
+      },
+      {
+        "email": "viewer@example.test",
+        "name": "Viewer User",
+        "traveling": false,
+      },
+      {
+        "email": null,
+        "name": "Guest Traveler",
+        "traveling": true,
+      },
+    ],
+    "startDate": "2090-03-01",
+  },
+]
+`;
+
+exports[`POST /trips > admin (global admin or editor) gets 201 with the trip row 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Created via REST",
+  "destination": "Newville",
+  "endDate": "2095-02-04",
+  "id": "<uuid:1>",
+  "name": "Created Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2095-02-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips > missing name is a 400 zod validation error 1`] = `
+{
+  "error": {
+    "message": "[
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "name"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]",
+    "name": "ZodError",
+  },
+  "success": false,
+}
+`;
+
+exports[`POST /trips > only name is required; missing optionals are stored as null 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": null,
+  "destination": null,
+  "endDate": null,
+  "id": "<uuid:1>",
+  "name": "Minimal",
+  "splitwiseGroupId": null,
+  "startDate": null,
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips > outsider (global admin or editor) gets 201 with the trip row 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Created via REST",
+  "destination": "Newville",
+  "endDate": "2095-02-04",
+  "id": "<uuid:1>",
+  "name": "Created Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2095-02-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips > owner (global admin or editor) gets 201 with the trip row 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Created via REST",
+  "destination": "Newville",
+  "endDate": "2095-02-04",
+  "id": "<uuid:1>",
+  "name": "Created Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2095-02-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId > admin 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": null,
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Renamed Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId > editor 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": null,
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Renamed Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId > empty body is accepted and only bumps updatedAt 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": "Fake trip for parity tests",
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Parity Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`PUT /trips/:tripId > owner 1`] = `
+{
+  "createdAt": "<timestamp>",
+  "description": null,
+  "destination": "Testville",
+  "endDate": "2090-03-08",
+  "id": "<trip>",
+  "name": "Renamed Trip",
+  "splitwiseGroupId": null,
+  "startDate": "2090-03-01",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
