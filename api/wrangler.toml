@@ -27,3 +27,11 @@ name = "EVAL_RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 30, period = 60 }
+
+# Per user, keyed on userId (the resolved Trips user, not IP). Limits MCP tool
+# calls on /api/mcp (Stage 1) and the MCP hostname (Stage 2).
+[[unsafe.bindings]]
+name = "MCP_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 120, period = 60 }

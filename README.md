@@ -103,6 +103,7 @@ Key endpoint groups:
 - `GET/POST/PUT/DELETE /trips/:tripId/expenses` — expense tracking
 - `GET/POST/PUT/DELETE /trips/:tripId/documents` — document attachments
 - `GET/POST/PUT/DELETE /admin/*` — user & service identity management (admins only)
+- `/mcp` — MCP server for AI agents (see [MCP server](#mcp-server))
 
 ### Behavior changes
 
@@ -118,6 +119,101 @@ Two REST behaviors changed on purpose when trip, itinerary and expense logic mov
 This also applies when a non-admin requests a trip id that does not exist. The list endpoint returned `200 []` before and now returns `404` `{"error":"Trip not found"}`. Participants are unaffected and still get the projection for their role. Admins are also unaffected: they get the full projection on every trip, and the list endpoint still returns `200 []` for a trip id that does not exist.
 
 **Creating a trip adds the creator as Owner.** `POST /trips` now inserts a `participants` row for the creator (`userId`, `email`, `name`, role `Owner`, not traveling) in the same batch as the trip, so both rows are written or neither is. This applies to admins too. The `201` response body is the same trip object as before. As a result, a non-admin creator can now see, edit and delete the trip they created, and the trip shows up in their trip list. Before, they were not a participant and could not read it back. Global viewers still get `403` and nothing is written.
+
+## MCP server
+
+The API also serves a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI agents can read and edit trips through tools instead of raw REST calls. The tools call the same service layer as the REST routes (`api/src/services/`), so they enforce the same trip roles and the same Viewer projection.
+
+- **Endpoint:** `/api/mcp` on the app host, served by the existing `/api/*` Worker route.
+- **Transport:** Streamable HTTP, stateless. Each request builds a fresh server, and the user is reloaded from D1 on every request, so a role change applies to the next call.
+- **Auth (Stage 1):** the same `authMiddleware` as the REST API, so the endpoint sits behind Cloudflare Access. Requests that don't resolve to an existing user get `401` before any MCP handling.
+
+Stage 1 is meant for clients that can send custom HTTP headers, such as Claude Code, the MCP Inspector, curl and local scripts. Hosted connectors such as claude.ai and Gemini Spark can't send custom headers. They need Stage 2 (OAuth on a dedicated MCP hostname), which hasn't been built yet.
+
+### Tools
+
+| Tool | Scope | Required trip role | Read/write |
+|---|---|---|---|
+| `get_me` | `trips:read` | none | read |
+| `list_trips` | `trips:read` | none (returns only trips you belong to) | read |
+| `get_trip` | `trips:read` | Viewer | read |
+| `search_itineraries` | `trips:read` | Viewer (searches only trips you belong to) | read |
+| `list_expenses` | `trips:read` | Viewer | read |
+| `create_trip` | `trips:write` | none (global role `editor` or `admin`; global viewers are refused) | write |
+| `create_itinerary` | `trips:write` | Editor | write |
+| `update_itinerary` | `trips:write` | Editor | write |
+| `add_expense` | `trips:write` | Editor | write |
+
+Read tools carry the MCP annotation `readOnlyHint: true`. All tools set `destructiveHint: false`, and there is no delete tool. `update_itinerary` is idempotent. `create_trip`, `create_itinerary` and `add_expense` are not, so each call creates a new record. `create_trip` makes the caller the trip's Owner.
+
+**Scopes.** Each tool checks its scope before it runs. Stage 1 grants every caller both `trips:read` and `trips:write`, so in Stage 1 only the trip role limits what a caller can do.
+
+**Roles.** "Editor" in the table means Editor or Owner. Admins are treated as Owner on every trip. A trip you don't belong to looks the same as a trip that doesn't exist: the tool returns `Trip not found`.
+
+**Viewer projection.** A caller with the Viewer role on a trip gets itineraries with confirmation numbers and traveler ticket numbers removed. That applies in `get_trip` and `search_itineraries`. A search across several trips projects each item for your role on that item's trip. Seat assignments are still visible to Viewers. Editors and Owners see every field.
+
+**Errors.** Tool failures come back as MCP tool errors (`isError: true`) with a short message, for example a missing scope, `Trip not found`, `Forbidden`, or a validation error listing the invalid fields. Any unexpected error comes back as `Internal error`, and the details are logged on the server only.
+
+### Rate limit
+
+`/api/mcp` is limited to 120 requests per 60 seconds per user, through the `MCP_RATE_LIMITER` binding in `api/wrangler.toml`. The limit is keyed on the resolved Trips user id, not the IP address. It counts every HTTP request to the endpoint, not only tool calls. Over the limit, the endpoint answers `429` `{"error":"Too many requests"}`. If the binding is missing, no limit is applied.
+
+### Audit log
+
+Every tool call writes one line to the Worker logs (Workers observability is enabled in `wrangler.toml`):
+
+```
+[mcp] tool=<name> user=<user id> trip=<trip id or -> scopes=<comma-separated scopes> ok=<true|false> err=<code or -> ms=<duration>
+```
+
+`trip` comes from the call's `tripId` argument, or is `-` when there isn't one. `err` is `-` on success. On failure it is `scope`, a service error code (such as `not_found`, `forbidden` or `validation`), or `internal`. Unexpected errors also log a second `[mcp] tool=<name> internal error: ...` line. Tool log lines don't include credentials or the `X-Dev-User-Email` value.
+
+### Connecting (Stage 1: Cloudflare Access service token)
+
+1. **Create a service token.** In Zero Trust → Access → Service Auth → Service Tokens, create (or reuse) a token for the MCP client. Keep its Client ID and Client Secret out of the repo, for example as `TRIPS_CF_ID` and `TRIPS_CF_SECRET` in the client's environment.
+2. **Allow the token on the Trips Access application.** Add a policy with action **Service Auth** that includes the token, next to the existing External Evaluation policy (see [Cloudflare Access configuration](#cloudflare-access-configuration)).
+3. **Map the token to a user.** A service token has no email, so `authMiddleware` looks it up in `service_identities`. Access sets `sub` to `""` for service tokens, so the middleware uses the token's `common_name` (its Client ID) as the subject and matches it against `cfAccessSubject`. As an admin, call:
+
+   ```
+   POST /api/admin/service-identities
+   { "cfAccessSubject": "<token common_name>", "commonName": "<token common_name>", "userId": "<user id>" }
+   ```
+
+   The token then acts as that user, with that user's global role and trip roles. A subject can be mapped only once (`409` otherwise).
+4. **Add the server to Claude Code:**
+
+   ```bash
+   claude mcp add --transport http trips "${TRIPS_MCP_URL}" \
+     --header "CF-Access-Client-Id: ${TRIPS_CF_ID}" \
+     --header "CF-Access-Client-Secret: ${TRIPS_CF_SECRET}"
+   ```
+
+   `TRIPS_MCP_URL` is `https://<app-host>/api/mcp`.
+5. **Verify.** Call `get_me` and check that it returns the mapped user.
+
+### Local development
+
+`api/.dev.vars` is committed with `DEV_MODE=true`, so `npm run dev` (`wrangler dev`, port 8787) accepts an `X-Dev-User-Email` header instead of Cloudflare Access. This works for both the REST API and `/api/mcp`.
+
+```bash
+# Terminal 1
+cd api
+npm run dev
+
+# Terminal 2: register the local server with Claude Code
+claude mcp add --transport http trips-local http://localhost:8787/api/mcp \
+  --header "X-Dev-User-Email: <your seeded email>"
+```
+
+To try the tools interactively, run the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector
+```
+
+In the Inspector, choose the **Streamable HTTP** transport, enter `http://localhost:8787/api/mcp`, and add the same `X-Dev-User-Email` header.
+
+The dev header works only when `DEV_MODE` is set and the email is already in the `user_emails` table of your local database. An unknown email gets `401`, and no user is created.
 
 ## Authentication & Access Control
 
@@ -143,6 +239,8 @@ The External Evaluation rule on the "Trips" application should be configured wit
 
 - **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
 - **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
+
+For the [MCP server](#mcp-server), the "Trips" application also needs a **Service Auth** policy that includes the MCP client's service token, next to the External Evaluation policy. `/api/mcp` must not match the Eval or Invites & Linking applications. With the paths above, it doesn't.
 
 The `jwtOnlyMiddleware` accepts JWTs from both the main application and the invite/link application (configured via `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE`).
 
@@ -176,6 +274,20 @@ Secrets (set via `wrangler secret put`):
 | Secret | Description |
 |---|---|
 | `EXTERNAL_EVAL_PRIVATE_KEY` | RSA private key (PEM) for signing eval response JWTs |
+
+Bindings (declared in `wrangler.toml`):
+
+| Binding | Type | Description |
+|---|---|---|
+| `DB` | D1 database | `trips-db`. The database id is injected at deploy time |
+| `EVAL_RATE_LIMITER` | Rate limit (namespace `1001`) | 30 requests per 60 s per IP on the External Evaluation endpoints |
+| `MCP_RATE_LIMITER` | Rate limit (namespace `1002`) | 120 requests per 60 s per user on `/api/mcp` |
+
+Local only (set in `api/.dev.vars`, never in production):
+
+| Variable | Description |
+|---|---|
+| `DEV_MODE` | When set, skips Cloudflare Access checks and identifies the user from the `X-Dev-User-Email` header. Used by the REST API and `/api/mcp` |
 
 ## Deployment
 

@@ -14,6 +14,7 @@ import documentRoutes from "./routes/documents";
 import itineraryRoutes from "./routes/itineraries";
 import inviteRoutes from "./routes/invites";
 import evalRoutes from "./routes/eval";
+import mcpStage1 from "./mcp/stage1";
 import { cors } from "hono/cors";
 import { ServiceError, SERVICE_ERROR_STATUS, serviceErrorBody } from "./services/errors";
 
@@ -89,6 +90,8 @@ app.route("/trips/:tripId/documents", documentRoutes);
 app.route("/trips/:tripId/itineraries", itineraryRoutes);
 app.route("/trips/:tripId/invites", inviteRoutes);
 app.route("/admin", adminRoutes);
+// MCP (Cloudflare Access); the route itself applies authMiddleware, so /api/mcp is never unauthenticated
+app.route("/", mcpStage1);
 
 export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {

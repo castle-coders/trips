@@ -231,6 +231,8 @@ server.registerTool(
 );
 ```
 
+(amended by orchestrator 2026-10-27 from the Phase 2 core build: tool callbacks have no `env`, so there is no `requestContext(ctx)`. `loadRequestContext(env, authInfo)` runs once in the server factory per section 6.2 and the resulting `rc` is closed over by every tool; tool modules export `registerXTools(server, rc)`, and tools are wrapped as `withTool(rc, name, scope, handler)`.)
+
 A `withTool` wrapper applies to every tool: it catches `ServiceError` and scope errors and returns `{ isError: true, content: [{ type: "text", text: message }] }`, logs the outcome, and rethrows anything else so the SDK reports an internal error without the stack.
 
 (amended by spike 2026-10-27: the last clause is wrong. The SDK turns any error thrown from a tool callback into `{ isError: true, content: [{ type: "text", text: error.message }] }`, so a raw message such as a D1 error reaches the client. This was observed in workerd. `withTool` must catch everything: `ServiceError` and scope errors keep their message, and everything else is logged server-side and returned as a fixed generic text, for example "Internal error". Verified signature: `registerTool(name, { title?, description?, inputSchema?, outputSchema?, annotations?, icons?, scopeChallenge?, _meta? }, (args, ctx: ServerContext) => CallToolResult)`. `inputSchema` takes a `z.object(...)`; the raw-shape form is deprecated. Without `inputSchema` the callback receives only `ctx`. Auth is at `ctx.http?.authInfo`. Schemas from `@hono/zod-openapi` with `.openapi()` metadata, and the `.extend(X.shape)` pattern above, typecheck and validate; the metadata does not appear in `tools/list`.)

@@ -1,4 +1,26 @@
-# Copy to .dev.vars.local to add secrets for local development.
-# .dev.vars is committed and sets DEV_MODE=true automatically.
-# Example:
-# SOME_SECRET=value
+# Local development variables and secrets for `wrangler dev`.
+#
+# .dev.vars is committed and sets DEV_MODE=true automatically. Put real
+# secrets in .dev.vars.local (gitignored), never in .dev.vars or this file.
+# Names only below; values are intentionally omitted.
+#
+# Note: plain `wrangler dev` (npm run dev) reads only .dev.vars. To also load
+# .dev.vars.local, pass both files (later file wins):
+#   npx wrangler dev --env-file .dev.vars --env-file .dev.vars.local
+#
+# Non-secret vars (CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUDIENCE,
+# CF_ACCESS_INVITE_AUDIENCE, BOOTSTRAP_ADMIN_EMAIL, EXTERNAL_EVAL_KEY_ID) come
+# from [vars] in wrangler.toml and only need an entry here to override them.
+
+# --- Vars ---
+
+# "true" bypasses Cloudflare Access verification; requests identify the user
+# with the X-Dev-User-Email header. Local only, never set in production.
+# Used by the REST API and the Stage 1 MCP endpoint (/api/mcp).
+# DEV_MODE=
+
+# --- Secrets (production: npx wrangler secret put <NAME>) ---
+
+# RSA private key (PKCS#8 PEM) that signs External Evaluation response JWTs.
+# Only needed locally when exercising /api/eval/*.
+# EXTERNAL_EVAL_PRIVATE_KEY=

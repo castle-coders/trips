@@ -13,6 +13,11 @@ export interface CfIdentity {
   name: string;
 }
 
+/** Cloudflare Workers ratelimit binding (`[[unsafe.bindings]] type = "ratelimit"`). */
+export interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
 export type Env = {
   Bindings: {
     DB: D1Database;
@@ -23,6 +28,10 @@ export type Env = {
     DEV_MODE?: string;
     EXTERNAL_EVAL_PRIVATE_KEY: string;
     EXTERNAL_EVAL_KEY_ID?: string;
+    /** Per-IP limiter on the External Evaluation endpoints (namespace 1001). */
+    EVAL_RATE_LIMITER?: RateLimiter;
+    /** Per-user limiter on MCP tool calls, keyed on userId (namespace 1002). */
+    MCP_RATE_LIMITER?: RateLimiter;
   };
   Variables: {
     user: AuthUser;
