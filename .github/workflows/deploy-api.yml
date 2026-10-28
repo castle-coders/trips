@@ -31,6 +31,46 @@ jobs:
       - name: Inject D1 Database ID
         run: sed -i 's/PROD_DB_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}/g' wrangler.toml
 
+      # OAUTH_KV (Stage 2 OAuth storage). Fails early with a clear message if the
+      # secret is missing, rather than deploying with the placeholder id.
+      - name: Inject OAuth KV Namespace ID
+        env:
+          KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
+        run: |
+          if [ -z "$KV_OAUTH_ID" ]; then
+            echo "::error::Repository secret CLOUDFLARE_KV_OAUTH_ID is not set (id of the OAUTH_KV namespace)."
+            exit 1
+          fi
+          sed -i "s/OAUTH_KV_ID_PLACEHOLDER/${KV_OAUTH_ID}/g" wrangler.toml
+
+      # MCP hostname route (Stage 2). Added only when MCP_HOST is set; otherwise
+      # the placeholder stays a TOML comment and no MCP route is deployed.
+      - name: Inject MCP Hostname Route
+        env:
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+          MCP_ZONE_NAME: ${{ secrets.MCP_ZONE_NAME }}
+          MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
+          ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
+          ACCESS_TOKEN_URL: ${{ secrets.ACCESS_TOKEN_URL }}
+          ACCESS_JWKS_URL: ${{ secrets.ACCESS_JWKS_URL }}
+          ACCESS_ISSUER: ${{ secrets.ACCESS_ISSUER }}
+        run: |
+          if [ -z "$MCP_HOST" ]; then
+            echo "MCP_HOST not set; skipping the MCP hostname route (Stage 2 stays disabled)."
+            exit 0
+          fi
+          # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
+          missing=""
+          for name in MCP_ZONE_NAME MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+            [ -n "$(printenv "$name")" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::MCP_HOST is set but these repository secrets are not:$missing"
+            exit 1
+          fi
+          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${MCP_HOST}/*\", zone_name = \"${MCP_ZONE_NAME}\" },|" wrangler.toml
+          grep -q "pattern = \"${MCP_HOST}/\*\"" wrangler.toml || { echo "::error::MCP route injection failed"; exit 1; }
+
       - name: Run Migrations
         uses: cloudflare/wrangler-action@v3
         with:
@@ -45,4 +85,14 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: 'api'
-          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          # Stage 2 vars: an unset secret expands to an empty value, which matches the
+          # committed default in wrangler.toml and leaves Stage 2 disabled.
+          command: >-
+            deploy
+            --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+            --var MCP_HOST:${{ secrets.MCP_HOST }}
+            --var MCP_PUBLIC_URL:${{ secrets.MCP_PUBLIC_URL }}
+            --var ACCESS_AUTHORIZATION_URL:${{ secrets.ACCESS_AUTHORIZATION_URL }}
+            --var ACCESS_TOKEN_URL:${{ secrets.ACCESS_TOKEN_URL }}
+            --var ACCESS_JWKS_URL:${{ secrets.ACCESS_JWKS_URL }}
+            --var ACCESS_ISSUER:${{ secrets.ACCESS_ISSUER }}

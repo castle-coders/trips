@@ -1,4 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import * as schema from "./schema";
 
 export interface AuthUser {
@@ -32,6 +33,30 @@ export type Env = {
     EVAL_RATE_LIMITER?: RateLimiter;
     /** Per-user limiter on MCP tool calls, keyed on userId (namespace 1002). */
     MCP_RATE_LIMITER?: RateLimiter;
+
+    // --- Stage 2: OAuth authorization server on the MCP hostname (TDD 7, 8) ---
+
+    /** OAuth provider storage: clients, grants, hashed tokens, consent and upstream state. */
+    OAUTH_KV: KVNamespace;
+    /**
+     * Set by the library only inside `OAuthProvider.fetch` (MCP hostname). Main-hostname
+     * code must use `getOAuthApi(buildProviderOptions(env), env)` instead.
+     */
+    OAUTH_PROVIDER?: OAuthHelpers;
+    /** Per-IP limiter on /authorize, /oauth/token, /oauth/register, keyed on cf-connecting-ip (namespace 1003). */
+    OAUTH_RATE_LIMITER?: RateLimiter;
+    /** Bare MCP hostname. Empty or unset disables Stage 2 dispatch entirely. */
+    MCP_HOST?: string;
+    /** Public MCP endpoint, `https://<mcp-host>/mcp`; the OAuth protected-resource identifier. */
+    MCP_PUBLIC_URL?: string;
+    /** Access for SaaS (OIDC) upstream endpoints and issuer. */
+    ACCESS_AUTHORIZATION_URL?: string;
+    ACCESS_TOKEN_URL?: string;
+    ACCESS_JWKS_URL?: string;
+    ACCESS_ISSUER?: string;
+    /** Secrets (`wrangler secret put`): Access for SaaS OIDC client credentials. */
+    ACCESS_CLIENT_ID?: string;
+    ACCESS_CLIENT_SECRET?: string;
   };
   Variables: {
     user: AuthUser;

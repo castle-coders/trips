@@ -10,6 +10,13 @@ declare global {
       DB: D1Database;
       EVAL_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
       TEST_MIGRATIONS: D1Migration[];
+      // Stage 2 (wrangler.toml): OAuth provider storage and the two extra ratelimit bindings.
+      OAUTH_KV: KVNamespace;
+      MCP_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
+      OAUTH_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
+      // Stage 2 vars are "" in wrangler.toml; tests override them per request.
+      MCP_HOST: string;
+      MCP_PUBLIC_URL: string;
     }
   }
 }

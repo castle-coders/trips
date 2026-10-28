@@ -173,6 +173,46 @@
           "token"
         ]
       },
+      "OAuthGrant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Grant id"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for unknown, deleted or metadata-document (URL) clients"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601; null when no expiry is recorded"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "clientName",
+          "scopes",
+          "createdAt",
+          "expiresAt"
+        ]
+      },
       "LinkPreviewRequest2": {
         "type": "object",
         "properties": {
@@ -1122,6 +1162,142 @@
           "commonName",
           "userId"
         ]
+      },
+      "AdminOAuthGrant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Grant id"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for unknown, deleted or metadata-document (URL) clients"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601; null when no expiry is recorded"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "userEmail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "clientName",
+          "scopes",
+          "createdAt",
+          "expiresAt",
+          "userId",
+          "userEmail"
+        ]
+      },
+      "OAuthClient": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string"
+          },
+          "confidential": {
+            "type": "boolean"
+          },
+          "registrationDate": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "clientId",
+          "clientName",
+          "redirectUris",
+          "tokenEndpointAuthMethod",
+          "confidential",
+          "registrationDate"
+        ]
+      },
+      "CreatedOAuthClient": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OAuthClient"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "clientSecret": {
+                "type": "string",
+                "description": "Shown once. Only its hash is stored; it cannot be retrieved again."
+              }
+            },
+            "required": [
+              "clientSecret"
+            ]
+          }
+        ]
+      },
+      "CreateOAuthClient": {
+        "type": "object",
+        "properties": {
+          "clientName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string",
+            "enum": [
+              "client_secret_basic",
+              "client_secret_post"
+            ],
+            "default": "client_secret_basic"
+          }
+        },
+        "required": [
+          "clientName",
+          "redirectUris"
+        ]
       }
     },
     "parameters": {}
@@ -1477,6 +1653,89 @@
           },
           "404": {
             "description": "Email not found"
+          }
+        }
+      }
+    },
+    "/auth/me/grants": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List the apps connected to your account through OAuth",
+        "responses": {
+          "200": {
+            "description": "Your grants, newest first; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthGrant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/grants/{grantId}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Disconnect an app: revoke one of your grants and all its tokens",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; the grant's access and refresh tokens no longer work"
+          },
+          "404": {
+            "description": "Not one of your grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2857,6 +3116,245 @@
           },
           "404": {
             "description": "Not found"
+          }
+        }
+      }
+    },
+    "/admin/grants": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List every user's OAuth grants (connected apps)",
+        "responses": {
+          "200": {
+            "description": "All grants, newest first; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminOAuthGrant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/grants/{userId}/{grantId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke a grant and all its tokens",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; the grant's access and refresh tokens no longer work"
+          },
+          "404": {
+            "description": "No such grant for that user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/oauth-clients": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List stored OAuth clients (static and dynamically registered), without secrets",
+        "responses": {
+          "200": {
+            "description": "Clients; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthClient"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create a static confidential OAuth client (for platforms without dynamic registration)",
+        "description": "The server generates the client id and secret. The secret is returned once in this response, stored only as a hash, and never logged. Every redirect URI must be on the server's allow-list.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOAuthClient"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created client, including the one-time secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedOAuthClient"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Redirect URI not allowed or metadata rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/oauth-clients/{clientId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete a stored OAuth client and revoke all of its grants",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted; its grants and refresh tokens are revoked"
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }

@@ -1,4 +1,13 @@
-import type { Trip, Participant, Itinerary } from "./types";
+import type {
+  Trip,
+  Participant,
+  Itinerary,
+  OAuthGrant,
+  AdminOAuthGrant,
+  OAuthClient,
+  CreatedOAuthClient,
+  CreateOAuthClientInput,
+} from "./types";
 
 const BASE = "/api";
 
@@ -116,6 +125,11 @@ export const account = {
     request<EmailEntry[]>(`/auth/me/emails/${emailId}`, { method: "DELETE" }),
   setPrimaryEmail: (emailId: string) =>
     request<EmailEntry[]>(`/auth/me/emails/${emailId}/primary`, { method: "PUT" }),
+
+  // Connected apps (OAuth grants). Empty list when OAuth is not configured.
+  listGrants: () => request<OAuthGrant[]>("/auth/me/grants"),
+  revokeGrant: (grantId: string) =>
+    request<void>(`/auth/me/grants/${encodeURIComponent(grantId)}`, { method: "DELETE" }),
 };
 
 // Users (authenticated, for pickers)
@@ -208,4 +222,56 @@ export const admin = {
     }),
   deleteServiceIdentity: (id: string) =>
     request<void>(`/admin/service-identities/${id}`, { method: "DELETE" }),
+
+  // OAuth grants and clients. Lists are empty when OAuth is not configured;
+  // mutations then fail with OAUTH_NOT_CONFIGURED (see oauthErrorMessage).
+  listGrants: () => request<AdminOAuthGrant[]>("/admin/grants"),
+  revokeGrant: (userId: string, grantId: string) =>
+    request<void>(
+      `/admin/grants/${encodeURIComponent(userId)}/${encodeURIComponent(grantId)}`,
+      { method: "DELETE" }
+    ),
+  listOAuthClients: () => request<OAuthClient[]>("/admin/oauth-clients"),
+  createOAuthClient: (data: CreateOAuthClientInput) =>
+    request<CreatedOAuthClient>("/admin/oauth-clients", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  deleteOAuthClient: (clientId: string) =>
+    request<void>(`/admin/oauth-clients/${encodeURIComponent(clientId)}`, { method: "DELETE" }),
 };
+
+// OAuth display helpers
+/** Error string the API returns (503) when OAuth (Stage 2) is not configured. */
+export const OAUTH_NOT_CONFIGURED = "OAuth is not configured";
+
+/** Maps an OAuth API error to a user-facing message. */
+export function oauthErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message === OAUTH_NOT_CONFIGURED) return "OAuth is not configured on this server.";
+  return message || "Something went wrong";
+}
+
+const OAUTH_SCOPE_LABELS: Record<string, string> = {
+  "trips:read": "View",
+  "trips:write": "Create & edit",
+  offline_access: "Stay connected",
+};
+
+/** Plain-language label for an OAuth scope; unknown scopes are shown as-is. */
+export function oauthScopeLabel(scope: string): string {
+  return OAUTH_SCOPE_LABELS[scope] ?? scope;
+}
+
+/** Display name for an OAuth client, falling back to its client id. */
+export function oauthAppName(item: { clientName: string | null; clientId: string }): string {
+  return item.clientName?.trim() || item.clientId;
+}
+
+/** Short date for an ISO timestamp, e.g. "Oct 27, 2026". */
+export function formatOAuthDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}

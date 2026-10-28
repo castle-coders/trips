@@ -4,6 +4,7 @@ import { getDb, type Env } from "../db";
 import { users, userEmails, accountLinkTokens, invites, participants, trips } from "../db/schema";
 import { authMiddleware, jwtOnlyMiddleware, findUserByEmail, createUserWithEmail } from "../middleware/auth";
 import { mergeAccountsD1 } from "../lib/merge";
+import { OAUTH_NOT_CONFIGURED, isOAuthConfigured, listGrantsForUser, revokeAllGrantsForUser, revokeGrant } from "../oauth/grants";
 
 const app = new OpenAPIHono<Env>();
 
@@ -549,6 +550,9 @@ app.openapi(
       if (keepUserId !== authUser.id) {
         // Merge account B (current user) into account A (token owner)
         console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
+        // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
+        // in the catch below (500) before any D1 change. The keep user must re-consent.
+        await revokeAllGrantsForUser(c.env, authUser.id);
         await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
         console.log("[link] Merge complete");
       } else {
@@ -678,6 +682,68 @@ app.openapi(
   }
 );
 
+// ── OAuth grants (connected apps) for the signed-in user (Stage 2, TDD 7.5) ──
+// Covered by the authMiddleware on "/me/*" above. Stage 2 off: list returns [], revoke 503.
+
+const OAuthGrantSchema = z
+  .object({
+    id: z.string().openapi({ description: "Grant id" }),
+    clientId: z.string(),
+    clientName: z.string().nullable().openapi({ description: "Null for unknown, deleted or metadata-document (URL) clients" }),
+    scopes: z.array(z.string()),
+    createdAt: z.string().openapi({ description: "ISO 8601" }),
+    expiresAt: z.string().nullable().openapi({ description: "ISO 8601; null when no expiry is recorded" }),
+  })
+  .openapi("OAuthGrant");
+
+// List the caller's grants
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/me/grants",
+    tags: ["Auth"],
+    summary: "List the apps connected to your account through OAuth",
+    responses: {
+      200: {
+        description: "Your grants, newest first; empty when OAuth is not configured",
+        content: { "application/json": { schema: z.array(OAuthGrantSchema) } },
+      },
+    },
+  }),
+  async (c) => {
+    const authUser = c.get("user");
+    return c.json(await listGrantsForUser(c.env, authUser.id), 200);
+  }
+);
+
+// Revoke one of the caller's grants
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/me/grants/{grantId}",
+    tags: ["Auth"],
+    summary: "Disconnect an app: revoke one of your grants and all its tokens",
+    request: {
+      params: z.object({ grantId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/) }),
+    },
+    responses: {
+      204: { description: "Revoked; the grant's access and refresh tokens no longer work" },
+      404: { description: "Not one of your grants", content: { "application/json": { schema: z.object({ error: z.string() }) } } },
+      503: { description: "OAuth (Stage 2) is not configured", content: { "application/json": { schema: z.object({ error: z.string() }) } } },
+    },
+  }),
+  async (c) => {
+    if (!isOAuthConfigured(c.env)) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
+    const authUser = c.get("user");
+    const { grantId } = c.req.valid("param");
+    // Membership is checked inside revokeGrant against listUserGrants(caller); another user's
+    // grant id is indistinguishable from a missing one.
+    const revoked = await revokeGrant(c.env, authUser.id, grantId);
+    if (!revoked) return c.json({ error: "Grant not found" }, 404);
+    return c.body(null, 204);
+  }
+);
+
 // ── Account linking routes for unknown users (jwtOnlyMiddleware) ──
 
 // GET /link/:token — HTML page showing link preview + confirm button
@@ -767,6 +833,9 @@ app.post("/link/:token/confirm", async (c) => {
     }
 
     if (keepUserId !== authUser.id) {
+      // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
+      // in the catch below (500) before any D1 change. The keep user must re-consent.
+      await revokeAllGrantsForUser(c.env, authUser.id);
       await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
     }
 
@@ -899,6 +968,9 @@ app.openapi(
       }
 
       if (keepUserId !== authUser.id) {
+        // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
+        // in the catch below (500) before any D1 change. The keep user must re-consent.
+        await revokeAllGrantsForUser(c.env, authUser.id);
         await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
       }
 

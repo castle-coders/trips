@@ -334,9 +334,11 @@ The Access for SaaS app carries the same External Evaluation rule as the main ap
 - Google Gemini Spark callback URLs: `https://vertexaisearch.cloud.google.com/oauth-redirect` and `https://oauth-redirect.googleusercontent.com/*`
 - Loopback `http` URIs (`http://localhost:<port>/...` or `http://127.0.0.1:<port>/...`)
 
-Registrations with any other redirect target are rejected. `disallowPublicClientRegistration` stays off, because Claude and Gemini can register as public clients.
+Registrations with any other redirect target are rejected. (amended by orchestrator 2026-10-27 from the provider build: rejections return RFC 7591 `invalid_redirect_uri`, not the library default `invalid_client_metadata`. The allow-list lives in `api/src/oauth/redirects.ts` as `isAllowedRedirect`, and the defaultHandler redirects `AuthorizationError`s only to allow-listed URIs.) `disallowPublicClientRegistration` stays off, because Claude and Gemini can register as public clients.
 
 (amended by spike 2026-10-27: `clientRegistrationCallback` exists under that name. Its signature is `({ clientMetadata: Record<string, unknown>, request: Request }) => void | { code?, description?, status? }`, and it may return a Promise. Return nothing to allow registration; return an object to reject it, which by default gives 400 `invalid_client_metadata` and was verified at runtime. It sees the raw body, so read `clientMetadata.redirect_uris`, which is snake_case and must be checked as an array. Check every URI. The callback runs only on the DCR endpoint. CIMD clients (`clientIdMetadataDocumentEnabled`) and `createClient()` seeds bypass it, so with CIMD on, the redirect allow-list does not apply to CIMD clients. The library separately requires `https`, or `http` on a loopback host, for every redirect URI.)
+
+(amended by orchestrator 2026-10-27: because CIMD clients and `createClient()` seeds bypass `clientRegistrationCallback` (spike), the same redirect allow-list is also enforced in `GET` and `POST /authorize` against the parsed `redirectUri` for every client, before consent is shown. One shared `isAllowedRedirect` function backs both checks. Static seeded clients are additionally limited to the redirect URIs they were seeded with by the library.)
 
 Additionally, for platforms where DCR is unsupported or where static credentials are required, pre-registered static clients can be seeded directly into `OAUTH_KV` via an admin script or endpoint.
 
@@ -362,6 +364,8 @@ Endpoints, all on the main hostname under the existing `authMiddleware`:
 | `DELETE /auth/me/grants/{grantId}` | signed-in user | Revoke one of the caller's grants; a grant id belonging to another user returns 404. |
 
 The main-hostname Worker reaches the helper API through `getOAuthApi(buildProviderOptions(env), env)` (amended by spike 2026-10-27: was `getOAuthApi(env)`) with the same `OAUTH_KV` binding, so no cross-hostname call is needed. Revocation deletes the grant and its tokens from KV, so the next bearer call fails validation and gets a `401`.
+
+(amended by orchestrator 2026-10-27 from the Phase 3 review: deleting a user (`DELETE /admin/users/{userId}`) and every account merge (admin merge, `/auth/me/link`, `/auth/link`, `/auth/link/:token/confirm`) revoke all of the removed user's grants and tokens before the D1 row is deleted, failing closed if KV is unavailable. Apps connected under a merged-away account must re-consent as the kept user. `apiHandler` also returns `401 invalid_token` when the token's user no longer exists.)
 
 Web UI: the admin page gains a "Connected apps" table with a revoke action per row. The profile page gains the same table scoped to the signed-in user. Both read from the endpoints above through `web/src/lib/api.ts`.
 
@@ -419,6 +423,8 @@ This adds two vars the PRD does not list: `MCP_HOST` (dispatch key) and `ACCESS_
 `.github/workflows/deploy-api.yml` gains a step that replaces `OAUTH_KV_ID_PLACEHOLDER` from a new repository secret, mirroring the D1 injection.
 
 ### 8.5 Local development
+
+(amended by orchestrator 2026-10-27 from the Phase 3 config report: `wrangler dev` rewrites every `request.url` to one host, by default the first route's host, so it does not serve both hostnames from one origin. Local Stage 2 runs as its own process with `MCP_HOST=localhost`, `MCP_PUBLIC_URL=http://localhost:<port>/mcp` and `--local-upstream localhost:<port>`. The dev proxy also rewrites `localhost` origins inside response headers (`resource_metadata`, `Location`), so local OAuth testing should register `http://127.0.0.1:<port>/...` redirects. `.dev.vars.local` is not auto-loaded; use `--env-file .dev.vars --env-file <file>`, where the later file wins. Committed Stage 2 vars are empty strings, injected at deploy from GitHub secrets; an empty `MCP_HOST` keeps Stage 2 off.)
 
 `wrangler dev` serves both hostnames through a single local origin. For Stage 1 tools, `DEV_MODE` plus `X-Dev-User-Email` is enough. For Stage 2, add a `.dev.vars.local` entry pointing the Access URLs at a dev Access for SaaS app, and use the `resource` value of the local origin. The MCP Inspector and `claude mcp add --transport http` both work against the local origin.
 

@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../lib/auth";
-import { account, DEV_EMAIL_KEY, LINK_TOKEN_KEY, LINK_TOKEN_EXPIRES_KEY, type MeResponse } from "../lib/api";
+import {
+  account,
+  DEV_EMAIL_KEY,
+  LINK_TOKEN_KEY,
+  LINK_TOKEN_EXPIRES_KEY,
+  formatOAuthDate,
+  oauthAppName,
+  oauthErrorMessage,
+  oauthScopeLabel,
+  type MeResponse,
+} from "../lib/api";
+import type { OAuthGrant } from "../lib/types";
 import { Link } from "react-router-dom";
 
 export function Account() {
@@ -18,6 +29,21 @@ export function Account() {
   const [emailErr, setEmailErr] = useState("");
   const [linkStarting, setLinkStarting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // Connected apps (OAuth grants)
+  const [grants, setGrants] = useState<OAuthGrant[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(true);
+  const [grantsErr, setGrantsErr] = useState("");
+  const [grantsMsg, setGrantsMsg] = useState("");
+  const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    account.listGrants()
+      .then(setGrants)
+      .catch((err) => setGrantsErr(oauthErrorMessage(err)))
+      .finally(() => setGrantsLoading(false));
+  }, []);
 
   useEffect(() => {
     account.getMe()
@@ -53,8 +79,8 @@ export function Account() {
       setMe(updated);
       await refreshUser();
       setProfileMsg("Profile updated");
-    } catch (err: any) {
-      setProfileErr(err.message);
+    } catch (err) {
+      setProfileErr((err as Error).message);
     } finally {
       setProfileSaving(false);
     }
@@ -85,8 +111,8 @@ export function Account() {
           window.location.href = linkPath;
         });
       }
-    } catch (err: any) {
-      setEmailErr(err.message);
+    } catch (err) {
+      setEmailErr((err as Error).message);
       setLinkStarting(false);
     }
   };
@@ -96,8 +122,8 @@ export function Account() {
     setEmailErr("");
     try {
       await confirmLink();
-    } catch (err: any) {
-      setEmailErr(err.message);
+    } catch (err) {
+      setEmailErr((err as Error).message);
     } finally {
       setConfirming(false);
     }
@@ -111,8 +137,8 @@ export function Account() {
       setMe((prev) => prev ? { ...prev, emails: updated, email: updated.find((e) => e.isPrimary)?.email ?? prev.email } : prev);
       await refreshUser();
       setEmailMsg("Primary email updated");
-    } catch (err: any) {
-      setEmailErr(err.message);
+    } catch (err) {
+      setEmailErr((err as Error).message);
     }
   };
 
@@ -123,8 +149,24 @@ export function Account() {
       const updated = await account.removeEmail(emailId);
       setMe((prev) => prev ? { ...prev, emails: updated } : prev);
       setEmailMsg("Email removed");
-    } catch (err: any) {
-      setEmailErr(err.message);
+    } catch (err) {
+      setEmailErr((err as Error).message);
+    }
+  };
+
+  const handleRevokeGrant = async (grant: OAuthGrant) => {
+    setGrantsMsg("");
+    setGrantsErr("");
+    setRevokingId(grant.id);
+    try {
+      await account.revokeGrant(grant.id);
+      setGrants((prev) => prev.filter((g) => g.id !== grant.id));
+      setGrantsMsg(`Disconnected ${oauthAppName(grant)}`);
+    } catch (err) {
+      setGrantsErr(oauthErrorMessage(err));
+    } finally {
+      setRevokingId(null);
+      setConfirmRevokeId(null);
     }
   };
 
@@ -256,6 +298,83 @@ export function Account() {
         <p className="mt-2 text-xs text-gray-400">
           You'll be signed out and asked to sign in with the email you want to link.
         </p>
+      </section>
+
+      <section className="mb-8 rounded-lg border border-gray-200 bg-white p-5">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Connected apps</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          Apps you have allowed to access your trips. Revoking an app signs it out immediately.
+        </p>
+
+        {grantsLoading ? (
+          <p className="py-4 text-center text-sm text-gray-400">Loading...</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 font-medium text-gray-500">App</th>
+                  <th className="px-4 py-3 font-medium text-gray-500">Permissions</th>
+                  <th className="px-4 py-3 font-medium text-gray-500">Connected</th>
+                  <th className="px-4 py-3 font-medium text-gray-500"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {grants.map((g) => (
+                  <tr key={g.id}>
+                    <td className="max-w-[160px] truncate px-4 py-3 text-gray-900" title={g.clientId}>
+                      {oauthAppName(g)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {g.scopes.map(oauthScopeLabel).join(", ") || "None"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                      {formatOAuthDate(g.createdAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {confirmRevokeId === g.id ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Revoke access?</span>
+                          <button
+                            onClick={() => handleRevokeGrant(g)}
+                            disabled={revokingId === g.id}
+                            className="text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                          >
+                            {revokingId === g.id ? "Revoking..." : "Revoke"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmRevokeId(null)}
+                            disabled={revokingId === g.id}
+                            className="text-xs font-medium text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmRevokeId(g.id)}
+                          className="text-xs font-medium text-red-600 hover:text-red-700"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!grants.length && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
+                      No apps are connected. Connect Trips from Claude or Gemini to see them here.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {grantsErr && <p className="mt-3 text-sm text-red-600">{grantsErr}</p>}
+        {grantsMsg && <p className="mt-3 text-sm text-green-600">{grantsMsg}</p>}
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-5">
