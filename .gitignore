@@ -1,4 +1,4 @@
-.claude/
+.claude/settings.local.json
 *.tar
 dev-accounts.md
 .DS_Store
