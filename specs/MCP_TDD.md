@@ -273,7 +273,8 @@ new OAuthProvider<Bindings>({
     resource_name: "Trips",
   },
   accessTokenTTL: 3600,
-  refreshTokenTTL: 60 * 60 * 24 * 30,
+  refreshTokenTTL: 60 * 60 * 24 * 30,         // lifetime of a new grant
+  refreshTokenIdleTTL: 60 * 60 * 24 * 30,     // (amended 2026-10-27 by user decision: 30-day idle window, no absolute cap; each refresh extends the grant)
   clientIdMetadataDocumentEnabled: true,       // lets Claude Code use CIMD; DCR stays on
   clientRegistrationCallback,                  // section 7.4
   onError,                                     // log code and description, never the token
@@ -473,5 +474,5 @@ Rollback for each step is a redeploy of the previous commit. No migrations are r
 - ~~Loopback port matching across Claude Code sessions (section 7.1).~~ (amended by spike 2026-10-27: resolved. Port-agnostic; host, path and query must match exactly.)
 - ~~Exact grant helper method names in `workers-oauth-provider` 1.2.x (section 7.5).~~ (amended by spike 2026-10-27: resolved. `listUserGrants`, `revokeGrant(grantId, userId)`, `getOAuthApi(options, env)`.)
 - ~~`"type": "commonjs"` in `api/package.json`.~~ (amended by spike 2026-10-27: resolved, keep `commonjs`. Wrangler picks the ESM and `workerd` builds, and tsc is unaffected. The only breakage is the vitest config, fixed by naming it `vitest.config.mts`.)
-- (amended by spike 2026-10-27, new) Refresh grant lifetime: set `refreshTokenIdleTTL` so unattended agents are not forced to re-consent every 30 days? See section 7.1.
+- ~~(amended by spike 2026-10-27, new) Refresh grant lifetime: set `refreshTokenIdleTTL` so unattended agents are not forced to re-consent every 30 days? See section 7.1.~~ (resolved 2026-10-27 by user decision: `refreshTokenIdleTTL` = 30 days, `refreshTokenTTL` = 30 days, no absolute cap. See section 7.1.)
 - Whether `trips:write` should be pre-checked on the consent page or left unchecked by default. Default in this design: unchecked.

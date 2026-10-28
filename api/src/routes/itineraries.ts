@@ -1,63 +1,20 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { itineraries, trips } from "../db/schema";
 import {
   ItinerarySchema,
-  ItineraryViewSchema,
   CreateItinerarySchema,
   UpdateItinerarySchema,
-  contentSchemaByType,
-  viewContentSchemaByType,
-  type ItineraryType,
 } from "../schemas/itinerary";
-import { getTripRole } from "../middleware/tripRole";
+import {
+  listItineraries,
+  getItinerary,
+  createItinerary,
+  updateItinerary,
+  deleteItinerary,
+} from "../services/itineraries";
 
-const CURRENT_SCHEMA_VERSION = 1;
-
-/**
- * Normalize legacy flight content that stored per-leg fields at the top level.
- * Moves them into the legs array so all code can assume the new format.
- * Safe to remove once all data has been migrated (0009_flight_legs_normalize.sql).
- */
-function normalizeFlightContent(row: Record<string, unknown>): Record<string, unknown> {
-  if (row.type !== "Flight") return row;
-  const content = row.content as Record<string, unknown> | undefined;
-  if (!content) return row;
-  // Old format has airline/flightNumber at the top level; new format does not
-  if (!content.airline) return row;
-
-  // Old format: top-level airline/flightNumber/etc, optional legs[] for extra legs
-  const leg0: Record<string, unknown> = {
-    airline: content.airline,
-    flightNumber: content.flightNumber,
-    departureAirport: content.departureAirport,
-    departureTime: content.departureTime,
-    departureTimeTz: content.departureTimeTz,
-    arrivalAirport: content.arrivalAirport,
-    arrivalTime: content.arrivalTime,
-    arrivalTimeTz: content.arrivalTimeTz,
-    fareClass: content.fareClass,
-    baggageAllowance: content.baggageAllowance,
-    seatAssignments: content.seatAssignments,
-  };
-
-  // Rename cabinClass→fareClass in any existing extra legs
-  const oldLegs = (content.legs as Array<Record<string, unknown>>) || [];
-  const extraLegs = oldLegs.map((l) => ({
-    ...l,
-    fareClass: l.fareClass ?? l.cabinClass,
-    cabinClass: undefined,
-  }));
-
-  return {
-    ...row,
-    content: {
-      travelers: content.travelers,
-      legs: [leg0, ...extraLegs],
-    },
-  };
-}
+// Handlers are thin: validate with the route schemas, call the service, return its result.
+// ServiceErrors map to HTTP status in the shared onError hook (src/index.ts).
 
 const app = new OpenAPIHono<Env>();
 
@@ -66,28 +23,6 @@ const itemParams = z.object({
   tripId: z.string().uuid(),
   itineraryId: z.string().uuid(),
 });
-
-function validateContent(type: ItineraryType, content: unknown) {
-  const schema = contentSchemaByType[type];
-  const result = schema.safeParse(content);
-  if (!result.success) {
-    return { ok: false as const, error: result.error.flatten() };
-  }
-  return { ok: true as const, data: result.data };
-}
-
-/** Project an itinerary row through the viewer schemas, stripping sensitive fields. */
-function toViewerResponse(row: Record<string, unknown>) {
-  const type = row.type as ItineraryType;
-  const viewContentSchema = viewContentSchemaByType[type];
-  // Parse content through the view schema to strip sensitive fields
-  const content = viewContentSchema
-    ? viewContentSchema.parse(row.content)
-    : row.content;
-  // Parse the itinerary envelope through the view schema (drops confirmationNumber)
-  const envelope = ItineraryViewSchema.parse({ ...row, content });
-  return envelope;
-}
 
 // List itineraries for a trip
 app.openapi(
@@ -106,16 +41,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const user = c.get("user");
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    const result = await db
-      .select()
-      .from(itineraries)
-      .where(eq(itineraries.tripId, tripId));
-    const normalized = result.map((r) => normalizeFlightContent(r as any));
-    const rows = role === "Viewer" ? normalized.map((r) => toViewerResponse(r as any)) : normalized;
+    const rows = await listItineraries(getDb(c.env.DB), c.get("user"), tripId);
     return c.json(rows as any, 200);
   }
 );
@@ -136,23 +63,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, itineraryId } = c.req.valid("param");
-    const user = c.get("user");
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    const result = await db
-      .select()
-      .from(itineraries)
-      .where(
-        and(
-          eq(itineraries.id, itineraryId),
-          eq(itineraries.tripId, tripId)
-        )
-      );
-    if (!result.length) return c.json({ error: "Not found" }, 404);
-    const normalized = normalizeFlightContent(result[0] as any);
-    const row = role === "Viewer" ? toViewerResponse(normalized as any) : normalized;
-    return c.json(row, 200);
+    const row = await getItinerary(getDb(c.env.DB), c.get("user"), tripId, itineraryId);
+    return c.json(row as any, 200);
   }
 );
 
@@ -178,37 +91,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-
-    const trip = await db.select().from(trips).where(eq(trips.id, tripId));
-    if (!trip.length) return c.json({ error: "Trip not found" }, 404);
-
-    const body = c.req.valid("json");
-
-    // Validate content against type-specific schema
-    const validation = validateContent(body.type as ItineraryType, body.content);
-    if (!validation.ok) {
-      return c.json({ error: "Invalid content for type", details: validation.error }, 400);
-    }
-
-    const now = new Date().toISOString();
-    const row = {
-      id: crypto.randomUUID(),
-      tripId,
-      type: body.type,
-      status: body.status ?? "Pending",
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      content: validation.data,
-      confirmationNumber: body.confirmationNumber ?? null,
-      totalCost: body.totalCost ?? null,
-      currency: body.currency ?? null,
-      notes: body.notes ?? null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.insert(itineraries).values(row);
-    return c.json(row, 201);
+    const row = await createItinerary(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("json"));
+    return c.json(row as any, 201);
   }
 );
 
@@ -234,44 +119,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, itineraryId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(itineraries)
-      .where(
-        and(
-          eq(itineraries.id, itineraryId),
-          eq(itineraries.tripId, tripId)
-        )
-      );
-    if (!existing.length) return c.json({ error: "Not found" }, 404);
-
-    const body = c.req.valid("json");
-    const effectiveType = (body.type ?? existing[0].type) as ItineraryType;
-
-    // If content is being updated, validate against the (possibly new) type
-    if (body.content) {
-      const validation = validateContent(effectiveType, body.content);
-      if (!validation.ok) {
-        return c.json(
-          { error: "Invalid content for type", details: validation.error },
-          400
-        );
-      }
-      body.content = validation.data as Record<string, unknown>;
-    }
-
-    const updated = {
-      ...existing[0],
-      ...body,
-      updatedAt: new Date().toISOString(),
-    };
-    await db
-      .update(itineraries)
-      .set(updated)
-      .where(eq(itineraries.id, itineraryId));
-    return c.json(updated, 200);
+    const updated = await updateItinerary(getDb(c.env.DB), c.get("user"), tripId, itineraryId, c.req.valid("json"));
+    return c.json(updated as any, 200);
   }
 );
 
@@ -288,19 +138,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, itineraryId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(itineraries)
-      .where(
-        and(
-          eq(itineraries.id, itineraryId),
-          eq(itineraries.tripId, tripId)
-        )
-      );
-    if (!existing.length) return c.json({ error: "Not found" }, 404);
-    await db.delete(itineraries).where(eq(itineraries.id, itineraryId));
+    await deleteItinerary(getDb(c.env.DB), c.get("user"), tripId, itineraryId);
     return c.body(null, 204);
   }
 );

@@ -48,7 +48,7 @@ Gate 1: `npm test` green with exactly the two announced behavior changes flipped
 4. `mcp-security-reviewer phase-2` | `mcp-docs-writer phase-2`
 5. Fix high or critical findings via the owning builder; re-review.
 
-Gate 2: tests green; `tools/list` returns nine tools under `wrangler dev` with the dev header; a Viewer `get_trip` response contains no `confirmationNumber`, `ticketNumber` or `seatAssignments`; reviewer says go. Commit.
+Gate 2: tests green; `tools/list` returns nine tools under `wrangler dev` with the dev header; a Viewer `get_trip` response contains no `confirmationNumber` or `ticketNumber` (seat assignments are allowed for Viewers by user decision 2026-10-27); reviewer says go. Commit.
 
 ### Phase 3: Stage 2 OAuth
 1. `mcp-config stage2`

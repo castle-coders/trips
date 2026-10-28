@@ -104,6 +104,21 @@ Key endpoint groups:
 - `GET/POST/PUT/DELETE /trips/:tripId/documents` — document attachments
 - `GET/POST/PUT/DELETE /admin/*` — user & service identity management (admins only)
 
+### Behavior changes
+
+Two REST behaviors changed on purpose when trip, itinerary and expense logic moved into a shared service layer (`api/src/services/`). All other responses are unchanged.
+
+**Non-members get 404 from itinerary reads.** Before, a signed-in user who was not a participant of a trip could read that trip's itineraries if they knew the trip id. They got `200` with the viewer projection. Now a non-admin who is not a participant gets `404`:
+
+| Endpoint | Before | Now |
+|---|---|---|
+| `GET /trips/:tripId/itineraries` | `200` with viewer-projected items | `404` `{"error":"Trip not found"}` |
+| `GET /trips/:tripId/itineraries/:itineraryId` | `200` with the viewer-projected item | `404` `{"error":"Not found"}`, the same response as for an itinerary that does not exist |
+
+This also applies when a non-admin requests a trip id that does not exist. The list endpoint returned `200 []` before and now returns `404` `{"error":"Trip not found"}`. Participants are unaffected and still get the projection for their role. Admins are also unaffected: they get the full projection on every trip, and the list endpoint still returns `200 []` for a trip id that does not exist.
+
+**Creating a trip adds the creator as Owner.** `POST /trips` now inserts a `participants` row for the creator (`userId`, `email`, `name`, role `Owner`, not traveling) in the same batch as the trip, so both rows are written or neither is. This applies to admins too. The `201` response body is the same trip object as before. As a result, a non-admin creator can now see, edit and delete the trip they created, and the trip shows up in their trip list. Before, they were not a participant and could not read it back. Global viewers still get `403` and nothing is written.
+
 ## Authentication & Access Control
 
 Authentication is handled by Cloudflare Access with an External Evaluation rule that restricts access to known users only. New users can only be created through invite acceptance or account linking.

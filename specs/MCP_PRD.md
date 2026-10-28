@@ -27,7 +27,7 @@ Delivery is staged:
 ### 4.1 Existing auth model
 - Authentication is Cloudflare Access. `authMiddleware` (`api/src/middleware/auth.ts`) verifies the Access JWT, maps service tokens through `service_identities`, and maps humans through `userEmails`. Unknown users are rejected.
 - Global roles are `admin`, `editor`, `viewer`. Trip roles are `Owner`, `Editor`, `Viewer`, resolved by `getTripRole` (`api/src/middleware/tripRole.ts`).
-- Viewer responses use dedicated view schemas (`ItineraryViewSchema` and related) that strip confirmation numbers, ticket numbers and seat assignments.
+- Viewer responses use dedicated view schemas (`ItineraryViewSchema` and related) that strip confirmation numbers and ticket numbers. (amended 2026-10-27 by user decision: Viewers may see seat assignments on both REST and MCP; the existing view schemas keep `seatAssignments` on purpose.)
 - The whole application hostname is behind an Access application with an External Evaluation rule. Anthropic and Google egress cannot present an Access JWT, so any endpoint called directly by cloud agents must not be covered by that application.
 
 ### 4.2 Client requirements (Claude and Gemini Spark)
@@ -96,7 +96,7 @@ All tools operate as the authenticated user. Read tools require `trips:read`. Wr
 Requirements:
 - Tool input schemas are derived from the existing Zod schemas in `api/src/schemas/` so REST and MCP validation never drift.
 - Tool parameter schemas should use concrete types and explicit property descriptions (avoiding ambiguous open-ended objects where possible) to ensure high reliability across different model function-calling engines (including Claude and Gemini).
-- Viewer-role users receive the view-schema projections. Confirmation numbers, ticket numbers and seat assignments must never appear in a Viewer's tool results.
+- Viewer-role users receive the view-schema projections. Confirmation numbers and ticket numbers must never appear in a Viewer's tool results. (amended 2026-10-27 by user decision: Viewers may see seat assignments on both REST and MCP; the existing view schemas keep `seatAssignments` on purpose.)
 - Tool descriptions state clearly what each tool does and what it needs, since LLMs choose tools based primarily on their descriptions.
 - Tool errors return structured MCP errors with a user-readable message and no stack traces or internal identifiers.
 
@@ -208,7 +208,7 @@ Point the CLI to the local dev server using `DEV_MODE` or configure loopback red
 6. **Hardening.** Rate limits, audit logging, background token refresh verification, error hygiene review, README.
 
 ## 11. Acceptance Criteria
-- A Viewer on a trip calling `get_trip` through MCP receives no confirmation numbers, ticket numbers or seat assignments.
+- A Viewer on a trip calling `get_trip` through MCP receives no confirmation numbers or ticket numbers. (amended 2026-10-27 by user decision: Viewers may see seat assignments on both REST and MCP; the existing view schemas keep `seatAssignments` on purpose.)
 - A user with only `trips:read` calling `create_itinerary` receives a scope error and nothing is written.
 - A Viewer with `trips:write` calling `update_itinerary` receives a role error and nothing is written.
 - An email not present in `userEmails` cannot complete the OAuth flow and no user row is created.

@@ -1,10 +1,10 @@
 // Deliberate REST behavior change (a), MCP_TDD 4.2 / 12 step 1:
 //   non-members get 404 from the itinerary list and get endpoints.
-// Today getTripRole() returns "Viewer" for a non-participant and the itinerary GET handlers do no
-// membership check, so a non-member who knows a trip id reads its itineraries (viewer-projected).
-// The tests labelled "CURRENT BEHAVIOR — flips in Phase 1" pass today. When the itineraries
-// extractor routes these GETs through services (requireTripRole -> not_found), it must delete
-// (or invert) each of them and turn the matching it.todo into a real test.
+// Before Phase 1, getTripRole() returned "Viewer" for a non-participant and the itinerary GET handlers
+// did no membership check, so a non-member who knew a trip id read its itineraries (viewer-projected).
+// The handlers now call services/itineraries.ts, whose requireTripRole throws not_found for
+// non-members; the shared onError maps it to 404. Messages: list -> "Trip not found",
+// single -> "Not found" (identical to a missing itinerary, so existence is not revealed).
 import { beforeEach, describe, expect, it } from "vitest";
 import { IDS, IT, allKeys, byId, itLabels, normalize, read, seedItineraries, seedRoleWorld, type RoleWorld } from "./helpers";
 
@@ -17,39 +17,30 @@ beforeEach(async () => {
 const base = `/api/trips/${IDS.trip}/itineraries`;
 
 describe("non-member (outsider) itinerary reads", () => {
-  it("CURRENT BEHAVIOR — flips in Phase 1: non-member GET list is 200 with the viewer projection", async () => {
-    const { status, body } = await read(await w.as.outsider.get(base));
-    expect(status).toBe(200);
-    expect(byId(body).map((r: { id: string }) => r.id)).toEqual([IT.activity, IT.flight, IT.oldFlight, IT.rail, IT.lodging]);
-    const keys = allKeys(body);
-    expect(keys.has("confirmationNumber")).toBe(false);
-    expect(keys.has("ticketNumber")).toBe(false);
-    // Identical to what a real Viewer member gets.
-    const asViewer = await read(await w.as.viewer.get(base));
-    expect(normalize(byId(body), itLabels(w))).toEqual(normalize(byId(asViewer.body), itLabels(w)));
+  it("PHASE 1: non-member GET /trips/:tripId/itineraries returns 404 (ServiceError not_found via the shared onError) and no itinerary data", async () => {
+    const res = await read(await w.as.outsider.get(base));
+    expect(res).toEqual({ status: 404, body: { error: "Trip not found" } });
   });
 
-  it("CURRENT BEHAVIOR — flips in Phase 1: non-member GET single is 200 with the viewer projection", async () => {
-    const { status, body } = await read(await w.as.outsider.get(`${base}/${IT.flight}`));
-    expect(status).toBe(200);
-    expect(body.id).toBe(IT.flight);
-    expect(body).not.toHaveProperty("confirmationNumber");
-    expect(body.content.travelers[0]).not.toHaveProperty("ticketNumber");
+  it("PHASE 1: non-member GET /trips/:tripId/itineraries/:itineraryId returns 404 for an EXISTING itinerary (same response as a missing one)", async () => {
+    const existing = await read(await w.as.outsider.get(`${base}/${IT.flight}`));
+    const missing = await read(await w.as.outsider.get(`${base}/${IDS.missing}`));
+    expect(existing).toEqual({ status: 404, body: { error: "Not found" } });
+    expect(missing).toEqual(existing);
   });
 
-  it("CURRENT BEHAVIOR — status stays 404 in Phase 1, body may change: non-member GET single of a missing itinerary is 404 'Not found'", async () => {
-    // Same status as after Phase 1, but today it is reached only because the row is missing.
+  it("non-member GET single of a missing itinerary is still 404 'Not found'", async () => {
     const res = await read(await w.as.outsider.get(`${base}/${IDS.missing}`));
     expect(res).toEqual({ status: 404, body: { error: "Not found" } });
   });
 
-  it("CURRENT BEHAVIOR — flips in Phase 1: non-admin GET list for a trip id that does not exist is 200 []", async () => {
+  it("PHASE 1: non-admin GET /trips/:missingTripId/itineraries returns 404 instead of 200 []", async () => {
     const res = await read(await w.as.owner.get(`/api/trips/${IDS.missing}/itineraries`));
-    expect(res).toEqual({ status: 200, body: [] });
+    expect(res).toEqual({ status: 404, body: { error: "Trip not found" } });
   });
 
-  it("CURRENT BEHAVIOR — may flip in Phase 1: admin GET list for a trip id that does not exist is 200 []", async () => {
-    // Flips to 404 only if requireTripRole checks trip existence for admins (TDD 4.2 does not say). Decide, then update.
+  it("DECIDED (unchanged): admin GET list for a trip id that does not exist is 200 []", async () => {
+    // requireTripRole treats admins as Owner with no trip-existence check (orchestrator decision).
     const res = await read(await w.as.admin.get(`/api/trips/${IDS.missing}/itineraries`));
     expect(res).toEqual({ status: 200, body: [] });
   });
@@ -60,9 +51,28 @@ describe("non-member (outsider) itinerary reads", () => {
     expect(res.body.map((r: { id: string }) => r.id)).toEqual([IT.otherTripActivity]);
   });
 
-  it.todo("PHASE 1: non-member GET /trips/:tripId/itineraries returns 404 (ServiceError not_found via the shared onError) and no itinerary data");
-  it.todo("PHASE 1: non-member GET /trips/:tripId/itineraries/:itineraryId returns 404 for an EXISTING itinerary (same response as a missing one)");
-  it.todo("PHASE 1: non-admin GET /trips/:missingTripId/itineraries returns 404 instead of 200 []");
-  it.todo("PHASE 1: admin (not a participant) still gets 200 with the full projection for list and get");
-  it.todo("PHASE 1: Viewer member still gets 200 with the viewer projection (snapshots in itineraries.test.ts unchanged)");
+  it("PHASE 1: admin (not a participant) still gets 200 with the full projection for list and get", async () => {
+    const list = await read(await w.as.admin.get(base));
+    expect(list.status).toBe(200);
+    expect(byId(list.body).map((r: { id: string }) => r.id)).toEqual([IT.activity, IT.flight, IT.oldFlight, IT.rail, IT.lodging]);
+    expect(allKeys(list.body).has("confirmationNumber")).toBe(true);
+    expect(allKeys(list.body).has("ticketNumber")).toBe(true);
+    const one = await read(await w.as.admin.get(`${base}/${IT.flight}`));
+    expect(one.status).toBe(200);
+    expect(one.body.confirmationNumber).toBe("CONF-FAKE-FLT");
+    expect(one.body.content.travelers[0].ticketNumber).toBe("TKT-FAKE-0001");
+  });
+
+  it("PHASE 1: Viewer member still gets 200 with the viewer projection (snapshots in itineraries.test.ts unchanged)", async () => {
+    const list = await read(await w.as.viewer.get(base));
+    expect(list.status).toBe(200);
+    expect(byId(list.body).map((r: { id: string }) => r.id)).toEqual([IT.activity, IT.flight, IT.oldFlight, IT.rail, IT.lodging]);
+    const keys = allKeys(list.body);
+    expect(keys.has("confirmationNumber")).toBe(false);
+    expect(keys.has("ticketNumber")).toBe(false);
+    const one = await read(await w.as.viewer.get(`${base}/${IT.flight}`));
+    expect(one.status).toBe(200);
+    expect(one.body).not.toHaveProperty("confirmationNumber");
+    expect(normalize(one.body, itLabels(w))).toEqual(normalize(byId(list.body).find((r: { id: string }) => r.id === IT.flight), itLabels(w)));
+  });
 });

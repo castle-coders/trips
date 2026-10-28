@@ -15,8 +15,23 @@ import itineraryRoutes from "./routes/itineraries";
 import inviteRoutes from "./routes/invites";
 import evalRoutes from "./routes/eval";
 import { cors } from "hono/cors";
+import { ServiceError, SERVICE_ERROR_STATUS, serviceErrorBody } from "./services/errors";
 
 const app = new OpenAPIHono<Env>();
+
+// Map service-layer errors to HTTP. Anything else keeps Hono's default handler behavior
+// (HTTPException -> its response; otherwise log and 500 "Internal Server Error").
+app.onError((err, c) => {
+  if (err instanceof ServiceError) {
+    return c.json(serviceErrorBody(err), SERVICE_ERROR_STATUS[err.code]);
+  }
+  if ("getResponse" in err) {
+    const res = err.getResponse();
+    return c.newResponse(res.body, res);
+  }
+  console.error(err);
+  return c.text("Internal Server Error", 500);
+});
 
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",

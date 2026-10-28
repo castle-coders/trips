@@ -25,3 +25,4 @@ export type { TestFetch } from "./http";
 export { normalize, byId, read, allKeys, seedRoleWorld, ACTORS, IDS } from "./parity";
 export type { Actor, RoleWorld } from "./parity";
 export { IT, itLabels, oldFormatFlight, railContent, seedItineraries } from "./itineraryFixtures";
+export { toAuth, errorOf, expectServiceError, dbState } from "./services";
