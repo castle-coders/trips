@@ -23,8 +23,14 @@ No new DNS record, Worker route, KV namespace, GitHub secret, or Worker secret.
 
 ## Stage 2: OAuth on the dedicated MCP hostname
 
-> **Do steps 1 and 2 before the next push to `main` that touches `api/`.** The deploy workflow's "Inject OAuth KV Namespace ID" step fails with `::error::Repository secret CLOUDFLARE_KV_OAUTH_ID is not set` until they are done. This blocks every API deploy, not only Stage 2.
+> **Do steps 1 and 2 before the next push to `main` that touches `api/`.** The deploy workflow's "Validate Deploy Secrets" step fails with `::error::Repository secret CLOUDFLARE_KV_OAUTH_ID is not set (id of the OAUTH_KV namespace).` until they are done. This blocks every API deploy, not only Stage 2.
 
+0. **Secret formats are validated before every deploy** (step "Validate Deploy Secrets"; failures print `::error::<SECRET NAME> ...` and never the value). Check these before merging:
+   - `CLOUDFLARE_D1_DATABASE_ID` is a standard UUID; `CLOUDFLARE_KV_OAUTH_ID` is 32 lowercase hex characters.
+   - `MCP_HOST` and `MCP_ZONE_NAME` are bare hostnames (they are lowercased); `MCP_HOST` equals the zone or is a subdomain of it.
+   - `MCP_PUBLIC_URL` is exactly `https://<MCP_HOST in lowercase>/mcp`, and is not set while `MCP_HOST` is empty.
+   - Each `ACCESS_*` URL starts with `https://` and has no whitespace, quotes or backslashes.
+   - The deploy step now runs `npx wrangler deploy` directly (with `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` from env) instead of `wrangler-action`; migrations still use `wrangler-action`.
 1. **KV namespace:** `npx wrangler kv namespace create OAUTH_KV` (or create it in the dashboard). Record the id.
 2. **GitHub secret `CLOUDFLARE_KV_OAUTH_ID`:** set it to that id.
 3. **DNS:** add a proxied record for `<mcp-host>` in `<zone>` (for example `AAAA` → `100::`, as usual for Worker-only hostnames).
@@ -59,3 +65,31 @@ No new DNS record, Worker route, KV namespace, GitHub secret, or Worker secret.
 
 - `api/.dev.vars` is tracked in git (it holds only `DEV_MODE=true` today) and is not gitignored. Anyone adding a secret there would commit it. Consider untracking it and keeping only `api/.dev.vars.example`.
 - `wrangler dev` loads only `.dev.vars` (or `.dev.vars.<env>` with `--env`); a `.dev.vars.local` file is not read automatically. Use `npx wrangler dev --env-file .dev.vars --env-file .dev.vars.local` (verified in Phase 3; the later file wins). Local Stage 2 needs its own process: `MCP_HOST=localhost`, `MCP_PUBLIC_URL=http://localhost:<port>/mcp`, and `--local-upstream localhost:<port>`, because `wrangler dev` rewrites every request to a single host.
+
+## Manual verification after deploy (cannot be automated offline)
+
+From the bottom of `api/test/acceptance.test.ts`:
+
+1. **Stage 1, real service token:** `claude mcp add` with `CF-Access-Client-Id`/`Secret` against production `/api/mcp`, then `get_me` resolves to the user mapped in `service_identities`.
+2. **Claude Code, Stage 2:** `claude mcp add --transport http trips "${MCP_PUBLIC_URL}"`, `/mcp` sign-in over the loopback redirect, `get_me` returns the same user id as step 1. Note whether Claude Code keeps the same loopback host and path across sessions (only the port may change).
+3. **claude.ai custom connector:** Settings → Connectors → Add custom connector with `${MCP_PUBLIC_URL}`; DCR, consent page, Access sign-in, then `list_trips` in chat. Repeat in Desktop and mobile.
+4. **Gemini Spark:** Custom apps for Spark → Add a custom app (DCR, or a static client from Admin → OAuth clients). Record which redirect URI Google registers (it must be on the allow-list), then "@trips" returns trips.
+5. **Gemini Spark unattended refresh:** run a recurring routine for more than 1 hour (ideally a day); it never re-prompts, and logs show `refresh_token` grants with no new `/authorize`.
+6. **Latency:** from Anthropic/Google egress (or nearby), time `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`, `/oauth/register`, `/oauth/token` (p95 < 1 s), and check Worker duration metrics.
+7. **D1 LIKE limit in production:** run `search_itineraries` with a 40-character `text`; it must succeed. The 50-byte pattern limit was measured locally only.
+
+## Accepted risks (recorded by the security reviews)
+
+- A failed PKCE verifier does not consume the authorization code (library 1.2.4 behavior; 43+ character verifier, 30/min/IP on `/oauth/token`).
+- No OIDC `nonce` on the Access leg (PKCE S256 + confidential client + single-use, browser-bound state).
+- The library reflects any `Origin` on its token, registration, metadata and `/mcp` responses (never with credentials; bearer auth only).
+- Refresh tokens are issued whether or not `offline_access` is granted, rotate on use, have no reuse detection, and live as long as they are used at least every 30 days (user decision: no absolute cap).
+- The Google relay rule accepts any `https://oauth-redirect.googleusercontent.com/...` target (per TDD 7.4); the consent page's client name, publisher note and redirect host are the control.
+- Future tools must register `outputSchema` as a `z.object(...)`: the output guard skips schemas without `~standard`, which would fall back to the SDK's path-revealing error text.
+
+## Pre-existing hard-coded config (not introduced by this work; operator to decide)
+
+- `api/wrangler.toml` still contains the real app route, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE` values.
+- `api/src/routes/auth.ts` (link-confirm HTML) and `api/src/index.ts` (CORS allow list) contain the app hostname.
+- `authMiddleware` enables the dev bypass when `DEV_MODE` is any non-empty string (`DEV_MODE=false` would enable it). Consider `=== "true"`.
+- Web lint: 5 pre-existing errors remain in `ItineraryTimeline.tsx`, `lib/auth.tsx`, `AcceptInvite.tsx` and `TripDetail.tsx` (×2); the 6 in `Account.tsx`/`Admin.tsx` were fixed.

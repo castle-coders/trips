@@ -9,7 +9,7 @@ import {
   CreateItinerarySchema,
   UpdateItinerarySchema,
 } from "../../schemas/itinerary";
-import { createItinerary, searchItineraries, updateItinerary } from "../../services/itineraries";
+import { createItinerary, searchItinerariesWithMeta, updateItinerary } from "../../services/itineraries";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -136,6 +136,7 @@ export function registerItineraryTools(server: McpServer, rc: McpRequestContext)
       description:
         "Search itineraries (flights, lodging, rail, car, restaurant, transport, activity) across the trips you belong to, or within one trip. " +
         "All filters are optional and combined with AND. Results are ordered by earliest scheduled time, unscheduled last, and capped by `limit`. " +
+        "Very broad searches are also capped server-side (1000 rows); narrow with tripId, types or dates. " +
         "Viewers of a trip do not see confirmation or ticket numbers. Requires scope trips:read; works for any trip role (Viewer or higher).",
       inputSchema: z.object({
         tripId: tripIdField.optional().describe("Restrict to one trip (UUID). Omit to search all your trips."),
@@ -147,8 +148,9 @@ export function registerItineraryTools(server: McpServer, rc: McpRequestContext)
         to: z.string().optional().describe("Inclusive end date, YYYY-MM-DD."),
         text: z
           .string()
+          .max(40)
           .optional()
-          .describe("Case-insensitive substring matched against the item's content (names, places, flight numbers) and notes."),
+          .describe("Case-insensitive substring to match in itinerary details and notes. Max 40 characters; use a short distinctive word or phrase (e.g. a hotel name or flight number)."),
         limit: z
           .number()
           .int()
@@ -160,17 +162,25 @@ export function registerItineraryTools(server: McpServer, rc: McpRequestContext)
       outputSchema: z.object({
         itineraries: z.array(itineraryOut),
         returned: z.number(),
-        total: z.number().describe("Number of matches before the limit was applied."),
-        truncated: z.boolean().describe("True when more matches exist than were returned; narrow the filters or raise limit."),
+        total: z
+          .number()
+          .describe(
+            "Number of matches found before `limit` was applied; when the server's 1000-row search cap is reached this is a lower bound and `truncated` is true.",
+          ),
+        truncated: z.boolean().describe("True when more matches exist than were returned (limit or server cap); narrow the filters or raise limit."),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     withTool(rc, "search_itineraries", "trips:read", async (args) => {
       const { limit, ...filter } = args;
-      const all = await searchItineraries(rc.db, rc.user, filter);
-      const cap = limit ?? DEFAULT_LIMIT;
-      const itineraries = all.slice(0, cap);
-      return ok({ itineraries, returned: itineraries.length, total: all.length, truncated: all.length > itineraries.length });
+      const { items, truncated: capped } = await searchItinerariesWithMeta(rc.db, rc.user, filter);
+      const itineraries = items.slice(0, limit ?? DEFAULT_LIMIT);
+      return ok({
+        itineraries,
+        returned: itineraries.length,
+        total: items.length,
+        truncated: capped || items.length > itineraries.length,
+      });
     }),
   );
 

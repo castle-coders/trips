@@ -28,25 +28,16 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Inject D1 Database ID
-        run: sed -i 's/PROD_DB_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}/g' wrangler.toml
-
-      # OAUTH_KV (Stage 2 OAuth storage). Fails early with a clear message if the
-      # secret is missing, rather than deploying with the placeholder id.
-      - name: Inject OAuth KV Namespace ID
+      # Every secret reaches the shell only through env: and is referenced as a
+      # quoted "$VAR"; no secrets expression is expanded inside a run string. This
+      # step checks the shape of every value used below BEFORE any sed edits
+      # wrangler.toml, so a malformed secret (quotes, |, /, &, whitespace)
+      # fails here and cannot corrupt the TOML or the shell line. Values are
+      # never echoed; error messages name the secret only.
+      - name: Validate Deploy Secrets
         env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
-        run: |
-          if [ -z "$KV_OAUTH_ID" ]; then
-            echo "::error::Repository secret CLOUDFLARE_KV_OAUTH_ID is not set (id of the OAUTH_KV namespace)."
-            exit 1
-          fi
-          sed -i "s/OAUTH_KV_ID_PLACEHOLDER/${KV_OAUTH_ID}/g" wrangler.toml
-
-      # MCP hostname route (Stage 2). Added only when MCP_HOST is set; otherwise
-      # the placeholder stays a TOML comment and no MCP route is deployed.
-      - name: Inject MCP Hostname Route
-        env:
           MCP_HOST: ${{ secrets.MCP_HOST }}
           MCP_ZONE_NAME: ${{ secrets.MCP_ZONE_NAME }}
           MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
@@ -55,21 +46,87 @@ jobs:
           ACCESS_JWKS_URL: ${{ secrets.ACCESS_JWKS_URL }}
           ACCESS_ISSUER: ${{ secrets.ACCESS_ISSUER }}
         run: |
-          if [ -z "$MCP_HOST" ]; then
+          fail=0
+          err() { echo "::error::$1"; fail=1; }
+
+          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          [[ "$D1_ID" =~ $uuid_re ]] || err "Repository secret CLOUDFLARE_D1_DATABASE_ID is missing or not a UUID."
+
+          # OAUTH_KV (Stage 2 OAuth storage) is a required binding: fail rather
+          # than deploy with the placeholder id.
+          if [ -z "$KV_OAUTH_ID" ]; then
+            err "Repository secret CLOUDFLARE_KV_OAUTH_ID is not set (id of the OAUTH_KV namespace)."
+          elif ! [[ "$KV_OAUTH_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            err "Repository secret CLOUDFLARE_KV_OAUTH_ID must be 32 lowercase hex characters."
+          fi
+
+          # https:// URL with no whitespace, quotes or backslashes.
+          url_re='^https://[^[:space:]"'"'"'\\]+$'
+          for name in ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+            v="$(printenv "$name" || true)"
+            if [ -n "$v" ] && ! [[ "$v" =~ $url_re ]]; then
+              err "Repository secret $name must start with https:// and contain no whitespace, quotes or backslashes."
+            fi
+          done
+
+          host_re='^[a-z0-9.-]+$'
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          zone="$(printf '%s' "$MCP_ZONE_NAME" | tr 'A-Z' 'a-z')"
+          if [ -n "$host" ]; then
+            # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
+            missing=""
+            for name in MCP_ZONE_NAME MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+              [ -n "$(printenv "$name" || true)" ] || missing="$missing $name"
+            done
+            [ -z "$missing" ] || err "MCP_HOST is set but these repository secrets are not:$missing"
+
+            [[ "$host" =~ $host_re ]] || err "Repository secret MCP_HOST must be a bare hostname matching ^[a-z0-9.-]+\$ (no scheme, port, path or whitespace)."
+            if [ -n "$zone" ]; then
+              if ! [[ "$zone" =~ $host_re ]]; then
+                err "Repository secret MCP_ZONE_NAME must match ^[a-z0-9.-]+\$."
+              elif [ "$host" != "$zone" ] && [ "${host%."$zone"}" = "$host" ]; then
+                err "Repository secret MCP_HOST is not inside the zone named by MCP_ZONE_NAME."
+              fi
+            fi
+            # The OAuth resource id must be exactly https://<lowercased MCP_HOST>/mcp.
+            if [ -n "$MCP_PUBLIC_URL" ] && [ "$MCP_PUBLIC_URL" != "https://$host/mcp" ]; then
+              err "Repository secret MCP_PUBLIC_URL must equal https://<MCP_HOST in lowercase>/mcp exactly."
+            fi
+          elif [ -n "$MCP_PUBLIC_URL" ]; then
+            err "Repository secret MCP_PUBLIC_URL is set but MCP_HOST is not."
+          fi
+
+          exit "$fail"
+
+      - name: Inject D1 Database ID
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: sed -i "s/PROD_DB_ID_PLACEHOLDER/${D1_ID}/g" wrangler.toml
+
+      # Shape validated above (32 hex characters), so it is safe in the sed expression.
+      - name: Inject OAuth KV Namespace ID
+        env:
+          KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
+        run: |
+          sed -i "s/OAUTH_KV_ID_PLACEHOLDER/${KV_OAUTH_ID}/g" wrangler.toml
+          grep -qF "id = \"${KV_OAUTH_ID}\"" wrangler.toml || { echo "::error::OAUTH_KV id injection failed"; exit 1; }
+
+      # MCP hostname route (Stage 2). Added only when MCP_HOST is set; otherwise
+      # the placeholder stays a TOML comment and no MCP route is deployed.
+      # Host and zone are lowercased and validated (^[a-z0-9.-]+$) above.
+      - name: Inject MCP Hostname Route
+        env:
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+          MCP_ZONE_NAME: ${{ secrets.MCP_ZONE_NAME }}
+        run: |
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          zone="$(printf '%s' "$MCP_ZONE_NAME" | tr 'A-Z' 'a-z')"
+          if [ -z "$host" ]; then
             echo "MCP_HOST not set; skipping the MCP hostname route (Stage 2 stays disabled)."
             exit 0
           fi
-          # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
-          missing=""
-          for name in MCP_ZONE_NAME MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
-            [ -n "$(printenv "$name")" ] || missing="$missing $name"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::MCP_HOST is set but these repository secrets are not:$missing"
-            exit 1
-          fi
-          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${MCP_HOST}/*\", zone_name = \"${MCP_ZONE_NAME}\" },|" wrangler.toml
-          grep -q "pattern = \"${MCP_HOST}/\*\"" wrangler.toml || { echo "::error::MCP route injection failed"; exit 1; }
+          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${host}/*\", zone_name = \"${zone}\" },|" wrangler.toml
+          grep -qF "{ pattern = \"${host}/*\", zone_name = \"${zone}\" }," wrangler.toml || { echo "::error::MCP route injection failed"; exit 1; }
 
       - name: Run Migrations
         uses: cloudflare/wrangler-action@v3
@@ -79,20 +136,29 @@ jobs:
           workingDirectory: 'api'
           command: d1 migrations apply trips-db --remote
 
+      # Run step instead of wrangler-action so every --var value is a quoted
+      # shell argument (wrangler-action's command: is an unquoted string).
+      # wrangler reads CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID from env.
+      # Stage 2 vars: an unset secret becomes an empty value, which matches the
+      # committed default in wrangler.toml and leaves Stage 2 disabled.
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: 'api'
-          # Stage 2 vars: an unset secret expands to an empty value, which matches the
-          # committed default in wrangler.toml and leaves Stage 2 disabled.
-          command: >-
-            deploy
-            --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
-            --var MCP_HOST:${{ secrets.MCP_HOST }}
-            --var MCP_PUBLIC_URL:${{ secrets.MCP_PUBLIC_URL }}
-            --var ACCESS_AUTHORIZATION_URL:${{ secrets.ACCESS_AUTHORIZATION_URL }}
-            --var ACCESS_TOKEN_URL:${{ secrets.ACCESS_TOKEN_URL }}
-            --var ACCESS_JWKS_URL:${{ secrets.ACCESS_JWKS_URL }}
-            --var ACCESS_ISSUER:${{ secrets.ACCESS_ISSUER }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+          MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
+          ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
+          ACCESS_TOKEN_URL: ${{ secrets.ACCESS_TOKEN_URL }}
+          ACCESS_JWKS_URL: ${{ secrets.ACCESS_JWKS_URL }}
+          ACCESS_ISSUER: ${{ secrets.ACCESS_ISSUER }}
+        run: |
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          npx wrangler deploy \
+            --var "BOOTSTRAP_ADMIN_EMAIL:${BOOTSTRAP_ADMIN_EMAIL}" \
+            --var "MCP_HOST:${host}" \
+            --var "MCP_PUBLIC_URL:${MCP_PUBLIC_URL}" \
+            --var "ACCESS_AUTHORIZATION_URL:${ACCESS_AUTHORIZATION_URL}" \
+            --var "ACCESS_TOKEN_URL:${ACCESS_TOKEN_URL}" \
+            --var "ACCESS_JWKS_URL:${ACCESS_JWKS_URL}" \
+            --var "ACCESS_ISSUER:${ACCESS_ISSUER}"

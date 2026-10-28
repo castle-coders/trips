@@ -128,7 +128,8 @@ export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {
     const url = new URL(request.url);
     const bindings = env as Env["Bindings"];
-    if (bindings.MCP_HOST && url.hostname === bindings.MCP_HOST) {
+    // URL.hostname is always lowercase, so compare case-insensitively.
+    if (bindings.MCP_HOST && url.hostname === bindings.MCP_HOST.toLowerCase()) {
       return handleMcpHost(request, url, bindings, ctx);
     }
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {

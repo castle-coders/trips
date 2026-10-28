@@ -1,5 +1,5 @@
 import type { z } from "@hono/zod-openapi";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { AuthUser } from "../db";
 import { itineraries, participants, trips } from "../db/schema";
 import {
@@ -11,7 +11,7 @@ import {
   type ItineraryType,
   type UpdateItinerarySchema,
 } from "../schemas/itinerary";
-import { getMembership, isAdmin, requireTripRole, type Db, type TripRole } from "./access";
+import { isAdmin, isTripRole, requireTripRole, type Db, type TripRole } from "./access";
 import { ServiceError } from "./errors";
 
 const CURRENT_SCHEMA_VERSION = 1;
@@ -391,9 +391,80 @@ function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 }
 
+/**
+ * Largest LIKE pattern, in UTF-8 bytes, that D1 accepts: the final pattern including the `%`
+ * wrappers and the `\` escapes added by likePattern. D1 caps SQLite's LIKE pattern length limit
+ * (SQLITE_MAX_LIKE_PATTERN_LENGTH / SQLITE_LIMIT_LIKE_PATTERN_LENGTH; stock SQLite default 50000)
+ * far lower; a longer pattern fails with "LIKE or GLOB pattern too complex: SQLITE_ERROR".
+ * Measured in the workers test pool: 50 bytes succeeds, 51 fails; multi-byte characters count
+ * per byte.
+ */
+export const SEARCH_TEXT_MAX_PATTERN_BYTES = 50;
+
+const utf8 = new TextEncoder();
+
+/** The LIKE pattern for `text`, or a validation error when D1 would reject it as too long. */
+function boundedLikePattern(text: string): string {
+  const p = likePattern(text);
+  if (utf8.encode(p).length > SEARCH_TEXT_MAX_PATTERN_BYTES) {
+    throw new ServiceError("validation", "Search text is too long; use a shorter phrase");
+  }
+  return p;
+}
+
 function textMatches(row: ProjectedItinerary, needle: string): boolean {
   const n = needle.toLowerCase();
   return JSON.stringify(row.content ?? null).toLowerCase().includes(n) || (row.notes ?? "").toLowerCase().includes(n);
+}
+
+/**
+ * Hard cap on the itinerary rows one search loads from the database, applied in SQL before any
+ * JS-side filtering. Bounds the cost of a single call (an admin with no filters would otherwise
+ * load the whole table). Callers' own `limit` slicing happens after this.
+ */
+export const SEARCH_HARD_CAP = 1000;
+
+export interface ItinerarySearchOptions {
+  /**
+   * Row cap for this call, for tests. Clamped to [1, SEARCH_HARD_CAP]; it can only lower the cap.
+   * Default SEARCH_HARD_CAP.
+   */
+  cap?: number;
+}
+
+export interface ItinerarySearchResult {
+  items: ProjectedItinerary[];
+  /**
+   * True when the SQL candidate set exceeded the cap, so `items` may be incomplete. Narrow the
+   * filters (tripId, types, text) to see everything. `items` can still be shorter than the cap
+   * (date filtering, Viewer text re-check and unprojectable rows run after the cap).
+   */
+  truncated: boolean;
+}
+
+/**
+ * The caller's role on each of `tripIds`, in one query. Same rules as access.getMembership:
+ * admin is Owner everywhere; a trip without a participant row is absent (non-member); an
+ * unrecognised stored role is Viewer.
+ */
+async function rolesForTrips(db: Db, user: AuthUser, tripIds: Set<string>): Promise<Map<string, TripRole>> {
+  const roles = new Map<string, TripRole>();
+  if (!tripIds.size) return roles;
+  if (isAdmin(user)) {
+    for (const id of tripIds) roles.set(id, "Owner");
+    return roles;
+  }
+  // All of the caller's participant rows (bounded by their trip count, and avoids a large IN list
+  // against D1's bound-parameter limit). First row per trip wins, like getMembership's LIMIT 1.
+  const rows = await db
+    .select({ tripId: participants.tripId, role: participants.role })
+    .from(participants)
+    .where(eq(participants.userId, user.id));
+  for (const r of rows) {
+    if (!tripIds.has(r.tripId) || roles.has(r.tripId)) continue;
+    roles.set(r.tripId, isTripRole(r.role) ? r.role : "Viewer");
+  }
+  return roles;
 }
 
 /**
@@ -407,19 +478,30 @@ function textMatches(row: ProjectedItinerary, needle: string): boolean {
  *   case-insensitive for ASCII; %, _ and \ in `text` are escaped). For Viewer rows the match is
  *   re-checked against the projected content, so a Viewer cannot probe hidden fields
  *   (ticketNumber) through the filter. Matching is on the JSON text, so key names also match.
+ *   An empty `text` is no filter. A `text` whose escaped, %-wrapped pattern exceeds
+ *   SEARCH_TEXT_MAX_PATTERN_BYTES (UTF-8) is a `validation` error, thrown before any query.
  * - `from`/`to`: the itinerary table has no date columns; dates come from the same per-type
  *   timeline times as groupItinerariesByLocalDate. A row matches when the span of its entry dates
  *   [earliest, latest] overlaps [from, to] (both inclusive). Rows with no dated entry are excluded
  *   whenever from or to is set.
  * - Order: by earliest entry time, unscheduled last, then id.
+ * - Cap: SQL loads at most SEARCH_HARD_CAP rows matching tripId/types/text/membership, ordered by
+ *   itineraries.id (SQL cannot compute entry times). When more exist, `truncated` is true and the
+ *   candidate set is the first SEARCH_HARD_CAP by id, not by time; the date filter, the Viewer text
+ *   re-check and the time sort then run on that subset only. So under truncation a from/to search
+ *   can miss in-range rows beyond the cap, and the output is not the globally earliest N.
  */
-export async function searchItineraries(
+export async function searchItinerariesWithMeta(
   db: Db,
   user: AuthUser,
-  filter: ItinerarySearchFilter = {}
-): Promise<ProjectedItinerary[]> {
+  filter: ItinerarySearchFilter = {},
+  options: ItinerarySearchOptions = {}
+): Promise<ItinerarySearchResult> {
+  const cap = Math.max(1, Math.min(SEARCH_HARD_CAP, Math.floor(options.cap ?? SEARCH_HARD_CAP)));
   const from = boundDate("from", filter.from);
   const to = boundDate("to", filter.to);
+  // Before any query: an over-long pattern would otherwise surface as a raw D1 error.
+  const textPattern = filter.text ? boundedLikePattern(filter.text) : undefined;
   if (filter.tripId !== undefined) {
     await requireTripRole(db, user, filter.tripId, "Viewer", { notFound: TRIP_NOT_FOUND });
   }
@@ -427,8 +509,8 @@ export async function searchItineraries(
   const conds: SQL[] = [];
   if (filter.tripId !== undefined) conds.push(eq(itineraries.tripId, filter.tripId));
   if (filter.types?.length) conds.push(inArray(itineraries.type, filter.types));
-  if (filter.text) {
-    const p = likePattern(filter.text);
+  if (textPattern !== undefined) {
+    const p = textPattern;
     conds.push(sql`(${itineraries.content} LIKE ${p} ESCAPE '\\' OR ${itineraries.notes} LIKE ${p} ESCAPE '\\')`);
   }
   if (!isAdmin(user)) {
@@ -441,11 +523,13 @@ export async function searchItineraries(
   }
   const where = conds.length ? and(...conds) : undefined;
 
-  const rows = await db.select().from(itineraries).where(where);
+  // One extra row tells us whether the cap was hit without a COUNT query.
+  const fetched = await db.select().from(itineraries).where(where).orderBy(asc(itineraries.id)).limit(cap + 1);
+  const truncated = fetched.length > cap;
+  const rows = truncated ? fetched.slice(0, cap) : fetched;
 
-  // One role lookup per distinct trip, using the same rule as every other read.
-  const roles = new Map<string, TripRole | null>();
-  for (const tripId of new Set(rows.map((r) => r.tripId))) roles.set(tripId, await getMembership(db, user, tripId));
+  // One role query for all distinct trips, using the same rules as every other read.
+  const roles = await rolesForTrips(db, user, new Set(rows.map((r) => r.tripId)));
 
   const results: Array<{ row: ProjectedItinerary; first: number; id: string }> = [];
   for (const raw of rows) {
@@ -475,5 +559,15 @@ export async function searchItineraries(
   }
 
   results.sort((a, b) => (a.first === b.first ? a.id.localeCompare(b.id) : a.first < b.first ? -1 : 1));
-  return results.map((r) => r.row);
+  return { items: results.map((r) => r.row), truncated };
+}
+
+/** searchItinerariesWithMeta without the truncation flag. Same filter, order and cap. */
+export async function searchItineraries(
+  db: Db,
+  user: AuthUser,
+  filter: ItinerarySearchFilter = {},
+  options: ItinerarySearchOptions = {}
+): Promise<ProjectedItinerary[]> {
+  return (await searchItinerariesWithMeta(db, user, filter, options)).items;
 }

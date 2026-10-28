@@ -2,6 +2,14 @@ import type { CallToolResult } from "@modelcontextprotocol/server";
 import { ServiceError } from "../../services/errors";
 import { requireScope, ScopeError, type McpRequestContext, type McpScope } from "../context";
 
+/** Strip control characters, clip, and quote when needed so a message cannot forge log fields/lines. */
+export function clipLog(value: unknown, max = 120): string {
+  const s = String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  if (s === "") return "-";
+  const clipped = s.length > max ? `${s.slice(0, max)}...` : s;
+  return JSON.stringify(clipped);
+}
+
 /**
  * Wrap a tool body. Order: scope check first, then `fn` (which calls a service).
  *  - ServiceError / ScopeError: returned as { isError: true, content: [message] } (message is safe).
@@ -39,7 +47,9 @@ export function withTool<A>(
         return { isError: true, content: [{ type: "text", text: e.message }] };
       }
       line(false, "internal");
-      console.error(`[mcp] tool=${name} internal error: ${e instanceof Error ? e.name + ": " + e.message : "unknown"}`);
+      console.error(
+        `[mcp] tool=${name} internal error: ${e instanceof Error ? `${e.name} ${clipLog(e.message, 200)}` : "unknown"}`,
+      );
       return { isError: true, content: [{ type: "text", text: "Internal error" }] };
     }
   };

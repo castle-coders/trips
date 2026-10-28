@@ -506,3 +506,121 @@ describe("user deletion and account merge revoke the removed user's grants", () 
     expect((await asMain(admin.email, `/admin/users/${doomed.id}`, { method: "DELETE" }, off)).status).toBe(404);
   });
 });
+
+describe("account link hardening: dead keep user and revoke failures", () => {
+  /**
+   * D1 enforces the account_link_tokens -> users cascade, so a token cannot outlive its owner at
+   * rest. The real window is a concurrent delete between the token lookup and the merge; this DB
+   * wrapper reproduces it by deleting the keep user just before the route consumes the token.
+   */
+  function deleteKeepUserOnConsume(keepUserId: string): Bindings {
+    const base = stage2Env();
+    const db = base.DB;
+    let fired = false;
+    const killFirst = async () => {
+      if (fired) return;
+      fired = true;
+      await db.prepare("DELETE FROM users WHERE id = ?").bind(keepUserId).run();
+    };
+    const wrapStmt = (stmt: D1PreparedStatement): D1PreparedStatement =>
+      new Proxy(stmt, {
+        get(target, prop, receiver) {
+          if (prop === "bind") return (...args: unknown[]) => wrapStmt(target.bind(...args));
+          if (prop === "run" || prop === "all" || prop === "raw" || prop === "first") {
+            return async (...args: unknown[]) => {
+              await killFirst();
+              return (target as any)[prop](...args);
+            };
+          }
+          const v = Reflect.get(target, prop, receiver);
+          return typeof v === "function" ? v.bind(target) : v;
+        },
+      });
+    const wrappedDb = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            const stmt = target.prepare(sql);
+            return /^delete from "account_link_tokens"/i.test(sql.trim()) ? wrapStmt(stmt) : stmt;
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    return { ...base, DB: wrappedDb };
+  }
+
+  async function setup() {
+    const keep = await seedUser("keep@example.test", "editor");
+    const gone = await seedUser("gone@example.test", "viewer");
+    const g = await connectApp(gone.id, "Gone Tool");
+    const { token } = (await (await asMain(keep.email, "/auth/me/link-token", { method: "POST" })).json()) as any;
+    expect(token).toBeTruthy();
+    return { keep, gone, g, token: token as string };
+  }
+
+  async function expectIntact(userId: string, c: Connected) {
+    expect(await kvCount(`grant:${userId}:`)).toBe(1);
+    expect((await mcpGetMe(c.accessToken)).status).toBe(200);
+  }
+
+  it("POST /auth/me/link: keep user deleted after token issue -> 404 invalid-token, caller's grants intact", async () => {
+    const { keep, gone, g, token } = await setup();
+    const res = await asMain(gone.email, "/auth/me/link", { method: "POST", body: JSON.stringify({ token }) }, deleteKeepUserOnConsume(keep.id));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Token not found or already used" });
+    await expectIntact(gone.id, g);
+  });
+
+  it("POST /auth/link: keep user deleted after token issue -> 404 invalid-token, caller's grants intact", async () => {
+    const { keep, gone, g, token } = await setup();
+    const res = await asMain(gone.email, "/auth/link", { method: "POST", body: JSON.stringify({ token }) }, deleteKeepUserOnConsume(keep.id));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Token not found or already used" });
+    await expectIntact(gone.id, g);
+  });
+
+  it("POST /auth/link/:token/confirm: keep user deleted after token issue -> Link Not Found page, caller's grants intact", async () => {
+    const { keep, gone, g, token } = await setup();
+    const res = await asMain(gone.email, `/auth/link/${token}/confirm`, { method: "POST" }, deleteKeepUserOnConsume(keep.id));
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("Link Not Found");
+    expect(html).toContain("This account link is invalid or has already been used.");
+    await expectIntact(gone.id, g);
+  });
+
+  function brokenKvEnv(): Bindings {
+    const base = stage2Env();
+    const brokenKv = new Proxy(base.OAUTH_KV, {
+      get(target, prop, receiver) {
+        if (prop === "list") return () => Promise.reject(new Error("kv down: secret detail"));
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    return { ...base, OAUTH_KV: brokenKv };
+  }
+
+  it.each([
+    ["/auth/me/link"],
+    ["/auth/link"],
+  ])("POST %s: a KV failure during revoke returns the fixed 500 body and logs the detail server-side", async (path) => {
+    const { keep, gone, token } = await setup();
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args) => void errors.push(args.map(String).join(" ")));
+
+    const res = await asMain(gone.email, path, { method: "POST", body: JSON.stringify({ token }) }, brokenKvEnv());
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Internal server error" });
+    expect(errors.join("\n")).toContain("kv down: secret detail");
+    expect(errors.join("\n")).not.toContain(token);
+
+    // No D1 change: both users survive, the caller's grant is still stored.
+    const db = (env as unknown as Bindings).DB;
+    const ids = (await db.prepare("SELECT id FROM users").all<{ id: string }>()).results.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([keep.id, gone.id]));
+    expect(await kvCount(`grant:${gone.id}:`)).toBe(1);
+  });
+});

@@ -57,6 +57,18 @@ npm run dev
 
 Open http://localhost:5173. The first registered user is automatically an admin.
 
+### Testing
+
+The API tests run with Vitest inside the Workers runtime (workerd), through `@cloudflare/vitest-pool-workers`. The config is `api/vitest.config.mts`.
+
+```bash
+cd api
+npm test                               # run the test suite
+npx tsc --noEmit -p test/tsconfig.json # typecheck the tests
+```
+
+The PRD acceptance tests for the [MCP server](#mcp-server) are in `api/test/acceptance.test.ts`. The checks that need live clients or production Cloudflare (claude.ai, Gemini Spark, a real Access service token, latency from Anthropic and Google networks) can't run offline. They are listed as manual steps in the comment at the bottom of that file.
+
 ## Roles & Permissions
 
 ### Global roles (set by admins)
@@ -107,7 +119,7 @@ Key endpoint groups:
 
 ### Behavior changes
 
-Two REST behaviors changed on purpose when trip, itinerary and expense logic moved into a shared service layer (`api/src/services/`). All other responses are unchanged.
+Three REST behaviors changed on purpose. The first two came with moving trip, itinerary and expense logic into a shared service layer (`api/src/services/`); the third came with the MCP server's hardening. All other responses are unchanged.
 
 **Non-members get 404 from itinerary reads.** Before, a signed-in user who was not a participant of a trip could read that trip's itineraries if they knew the trip id. They got `200` with the viewer projection. Now a non-admin who is not a participant gets `404`:
 
@@ -119,6 +131,8 @@ Two REST behaviors changed on purpose when trip, itinerary and expense logic mov
 This also applies when a non-admin requests a trip id that does not exist. The list endpoint returned `200 []` before and now returns `404` `{"error":"Trip not found"}`. Participants are unaffected and still get the projection for their role. Admins are also unaffected: they get the full projection on every trip, and the list endpoint still returns `200 []` for a trip id that does not exist.
 
 **Creating a trip adds the creator as Owner.** `POST /trips` now inserts a `participants` row for the creator (`userId`, `email`, `name`, role `Owner`, not traveling) in the same batch as the trip, so both rows are written or neither is. This applies to admins too. The `201` response body is the same trip object as before. As a result, a non-admin creator can now see, edit and delete the trip they created, and the trip shows up in their trip list. Before, they were not a participant and could not read it back. Global viewers still get `403` and nothing is written.
+
+**Account-link errors no longer echo internal messages.** `POST /auth/me/link` and `POST /auth/link` used to return the exception text in a `500` body. They now always return `500` `{"error":"Internal server error"}`, and the detail is logged on the server only. `POST /auth/link/:token/confirm` still answers with its generic HTML error page. When the token's owner no longer exists, all three now answer as for an unknown token (`404` `{"error":"Token not found or already used"}`, or the "Link Not Found" page) before anything is changed.
 
 ## MCP server
 
@@ -133,7 +147,7 @@ The same Worker serves the MCP server in two ways:
 | For | Clients that can send custom HTTP headers: Claude Code, the MCP Inspector, curl, local scripts | Any MCP client with OAuth: Claude Code, claude.ai, Claude Desktop and mobile, Gemini Spark, Gemini CLI |
 | Scopes | Always `trips:read` and `trips:write` | What the user approved on the consent page |
 
-- **Transport:** Streamable HTTP, stateless, on both endpoints. Each request builds a fresh server, and the user is reloaded from D1 on every request, so a role change or a deleted user applies to the next call.
+- **Transport:** Streamable HTTP, stateless, on both endpoints. Each request builds a fresh server, and the user is reloaded from D1 on every request, so a role change applies to the next call. If the user has been deleted, the next request gets `401`: in Stage 1 from `authMiddleware`, in Stage 2 as `invalid_token` with the same `WWW-Authenticate` challenge as a bad token.
 - **Stage 1 auth:** requests that don't resolve to an existing user get `401` before any MCP handling.
 - **Stage 2 auth:** requests without a valid bearer token get `401` with a `WWW-Authenticate` header that points the client at the discovery metadata, which starts the sign-in. See [Stage 2: OAuth on the MCP hostname](#stage-2-oauth-on-the-mcp-hostname).
 
@@ -161,13 +175,15 @@ Read tools carry the MCP annotation `readOnlyHint: true`. All tools set `destruc
 
 **Viewer projection.** A caller with the Viewer role on a trip gets itineraries with confirmation numbers and traveler ticket numbers removed. That applies in `get_trip` and `search_itineraries`. A search across several trips projects each item for your role on that item's trip. Seat assignments are still visible to Viewers. Editors and Owners see every field.
 
-**Errors.** Tool failures come back as MCP tool errors (`isError: true`) with a short message, for example a missing scope, `Trip not found`, `Forbidden`, or a validation error listing the invalid fields. Any unexpected error comes back as `Internal error`, and the details are logged on the server only.
+**Search limits.** `search_itineraries` returns at most `limit` items (default 50, max 200). `text` is a case-insensitive substring of at most 40 characters. The search loads at most 1000 candidate rows from the database; when there are more, `truncated` is `true` and `total` is a lower bound. The cap is applied before the date filter and the time sort, so a truncated search with `from`/`to` can miss matching items. Narrow it with `tripId`, `types` or `text`. D1 rejects `LIKE` patterns longer than 50 bytes, so text that grows past that once `%`, `_` and `\` are escaped (or that uses multi-byte characters) is refused with `Search text is too long; use a shorter phrase`.
+
+**Errors.** Tool failures come back as MCP tool errors (`isError: true`) with a short message, for example a missing scope, `Trip not found`, `Forbidden`, or a validation error listing the invalid fields. Any unexpected error comes back as `Internal error`, and the details are logged on the server only. The server also checks each tool's result against the tool's output schema before sending it. A result that doesn't match comes back as `Internal error` too, so schema details never reach the client.
 
 ### Rate limit
 
 `/api/mcp` and the Stage 2 `/mcp` endpoint are limited to 120 requests per 60 seconds per user, through the `MCP_RATE_LIMITER` binding in `api/wrangler.toml`. The limit is keyed on the resolved Trips user id, not the IP address, and both endpoints share it. It counts every HTTP request to the endpoint, not only tool calls. Over the limit, the endpoint answers `429` `{"error":"Too many requests"}`. If the binding is missing, no limit is applied.
 
-On the MCP hostname, `/authorize`, `/oauth/token` and `/oauth/register` are also limited to 30 requests per 60 seconds per IP address (`cf-connecting-ip`), through the `OAUTH_RATE_LIMITER` binding. Over the limit, they answer `429` `{"error":"Too many requests"}`. `/callback` and the `/.well-known/` metadata are not rate-limited.
+On the MCP hostname, `/authorize`, `/callback`, `/oauth/token` and `/oauth/register` are also limited to 30 requests per 60 seconds per IP address (`cf-connecting-ip`), through the `OAUTH_RATE_LIMITER` binding. Over the limit, these paths answer `429` `{"error":"Too many requests"}`. The `/.well-known/` metadata is not rate-limited.
 
 ### Audit log
 
@@ -177,7 +193,7 @@ Every tool call writes one line to the Worker logs (Workers observability is ena
 [mcp] tool=<name> user=<user id> trip=<trip id or -> scopes=<comma-separated scopes> ok=<true|false> err=<code or -> ms=<duration>
 ```
 
-`trip` comes from the call's `tripId` argument, or is `-` when there isn't one. `err` is `-` on success. On failure it is `scope`, a service error code (such as `not_found`, `forbidden` or `validation`), or `internal`. Unexpected errors also log a second `[mcp] tool=<name> internal error: ...` line. Tool log lines don't include credentials or the `X-Dev-User-Email` value.
+`trip` comes from the call's `tripId` argument, or is `-` when there isn't one. `err` is `-` on success. On failure it is `scope`, a service error code (such as `not_found`, `forbidden` or `validation`), `internal`, or `output`. Unexpected errors also log a second `[mcp] tool=<name> internal error: ...` line, with the error message stripped of control characters and clipped to 200 characters. `output` means the tool ran but its result failed the output schema check. It appears on an extra line, `[mcp] tool=<name> user=... trip=... scopes=... ok=false err=output paths=<schema paths>`, logged after the tool's own line (which still reads `ok=true`). It names the failing fields but never their values. Tool log lines don't include credentials or the `X-Dev-User-Email` value.
 
 The Stage 2 sign-in flow logs `[oauth] event=<authorize|consent|upstream|error> ...` lines with the client id, the consent decision and approved scopes, the sign-in step, the user id once known, and OAuth error codes. They never include tokens, authorization codes, PKCE verifiers, state, client secrets or email addresses.
 
@@ -213,6 +229,7 @@ The Stage 2 sign-in flow logs `[oauth] event=<authorize|consent|upstream|error> 
 - **Scopes.** `trips:read` (view trips, itineraries and expenses), `trips:write` (create and update, never delete) and `offline_access` (stay connected while you are away). `trips:read` and `offline_access` are ticked by default; `trips:write` is not, so tick it to let the app make changes. The page offers only the scopes the app asked for (all three if it asked for none), and a forged form can't add others.
 - **Token lifetimes.** Access tokens last 1 hour. Refresh tokens rotate on every use. A grant stays alive as long as it is refreshed at least once every 30 days, with no absolute cap.
 - **Revocation.** Disconnecting an app from the Account or Admin page deletes the grant and its tokens. The app's next `/mcp` call gets `401` and its refresh token stops working, so it must sign in again.
+- **Deleted and merged users.** Deleting a user (`DELETE /api/admin/users/{userId}`) revokes all of that user's grants first. Merging accounts, by an admin or through account linking, revokes the grants of the account that is merged away; the kept account's grants are untouched. Apps that were connected under the merged-away account must reconnect, signing in as the kept account. If revoking fails, the delete or merge stops with `500` and nothing is changed. A token whose user no longer exists gets `401` `invalid_token`.
 
 ### Stage 2 endpoints
 
@@ -380,7 +397,7 @@ These steps turn on Stage 2 of the [MCP server](#mcp-server). Nothing is created
    - Note its client ID, client secret, authorization endpoint, token endpoint, JWKS endpoint and issuer.
 5. **Verify that no Access application matches `<mcp-host>`.** Check every self-hosted application, wildcards included. `/mcp`, `/authorize`, `/oauth/*`, `/callback` and `/.well-known/*` must reach the Worker without an Access challenge. Also make sure Bot Fight Mode, managed challenges and WAF rules don't challenge them: Claude and Gemini can't solve challenges.
 6. **Worker route.** Don't add it in the dashboard. Set the GitHub secrets `MCP_HOST` (bare `<mcp-host>`) and `MCP_ZONE_NAME` (`<zone>`), and the deploy workflow adds the `<mcp-host>/*` route.
-7. **Other GitHub secrets**, all required once `MCP_HOST` is set: `MCP_PUBLIC_URL` (exactly `https://<mcp-host>/mcp`, lowercase, no trailing slash), `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL` and `ACCESS_ISSUER` from step 4.
+7. **Other GitHub secrets**, all required once `MCP_HOST` is set: `MCP_PUBLIC_URL` (exactly `https://<mcp-host>/mcp`, lowercase, no trailing slash), `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL` and `ACCESS_ISSUER` from step 4. The deploy checks their format first (see [Deployment](#deployment)).
 8. **Worker secrets** (see [Worker secrets](#worker-secrets)): `ACCESS_CLIENT_ID` and `ACCESS_CLIENT_SECRET` from step 4.
 9. **Deploy and verify.** Push to `main` (or re-run the workflow), then connect a client (see [Connecting (Stage 2: OAuth)](#connecting-stage-2-oauth)) and call `get_me`.
 
@@ -443,7 +460,7 @@ Bindings (declared in `wrangler.toml`):
 | `EVAL_RATE_LIMITER` | Rate limit (namespace `1001`) | 30 requests per 60 s per IP on the External Evaluation endpoints |
 | `MCP_RATE_LIMITER` | Rate limit (namespace `1002`) | 120 requests per 60 s per user on `/api/mcp` and the Stage 2 `/mcp` |
 | `OAUTH_KV` | KV namespace | OAuth provider storage: clients, grants, hashed tokens, consent and sign-in state. The namespace id is injected at deploy time |
-| `OAUTH_RATE_LIMITER` | Rate limit (namespace `1003`) | 30 requests per 60 s per IP on `/authorize`, `/oauth/token` and `/oauth/register` on the MCP hostname |
+| `OAUTH_RATE_LIMITER` | Rate limit (namespace `1003`) | 30 requests per 60 s per IP on `/authorize`, `/callback`, `/oauth/token` and `/oauth/register` on the MCP hostname |
 
 `wrangler.toml` also sets the compatibility flag `global_fetch_strictly_public`. The OAuth library needs it to accept clients identified by a metadata document URL. With it, every outbound `fetch()` from the Worker goes to the public Internet, even for hostnames on the Worker's own zone.
 
@@ -476,6 +493,18 @@ GitHub Actions secrets required:
 
 Stage 2 is all or nothing: when `MCP_HOST` is set, the workflow fails unless `MCP_ZONE_NAME`, `MCP_PUBLIC_URL` and the four `ACCESS_*` secrets are set too. `ACCESS_CLIENT_ID` and `ACCESS_CLIENT_SECRET` are Worker secrets, not GitHub secrets (see [Worker secrets](#worker-secrets)).
 
+The workflow's first step after `npm ci`, **Validate Deploy Secrets**, checks the format of every secret before anything edits `wrangler.toml`. Errors name the secret, never its value:
+
+| Secret | Rule |
+|---|---|
+| `CLOUDFLARE_D1_DATABASE_ID` | Required. A UUID |
+| `CLOUDFLARE_KV_OAUTH_ID` | Required. 32 lowercase hex characters |
+| `MCP_HOST`, `MCP_ZONE_NAME` | Bare hostnames: after lowercasing, only `a-z`, `0-9`, `.` and `-`. `MCP_HOST` must be the zone itself or a subdomain of it |
+| `MCP_PUBLIC_URL` | Exactly `https://<MCP_HOST in lowercase>/mcp`. Must be empty when `MCP_HOST` is empty |
+| `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` | When set, start with `https://` and contain no whitespace, quotes or backslashes |
+
+`MCP_HOST` is lowercased for both the route and the `MCP_HOST` var, so the secret may be in any case. Migrations run through `cloudflare/wrangler-action`. The deploy itself runs `npx wrangler deploy` directly, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment and each value passed as a quoted `--var`.
+
 Manual deploy:
 
 ```bash
@@ -483,7 +512,7 @@ cd api
 npm run deploy
 ```
 
-A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first, If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with the MCP route and pass the Stage 2 vars with `--var`, as the workflow does.
+A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first. If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with the MCP route and pass the Stage 2 vars with `--var`, as the workflow does.
 
 ## Tech Stack
 

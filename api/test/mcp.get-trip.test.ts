@@ -162,6 +162,27 @@ describe("search_itineraries limit and truncation", () => {
     expect(max.isError).toBe(false);
   });
 
+  it("rejects text longer than 40 characters with an input validation error", async () => {
+    const { trip, c } = await tripWith(1);
+    const bad = await c.call("search_itineraries", { tripId: trip.id, text: "x".repeat(41) });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/^Input validation error/);
+  });
+
+  it("accepts exactly 40 plain ASCII characters", async () => {
+    const { trip, c } = await tripWith(1);
+    const ok = await c.call("search_itineraries", { tripId: trip.id, text: "x".repeat(40) });
+    expect(ok.isError).toBe(false);
+  });
+
+  it("reports an escaped LIKE pattern that is too long as a validation message, not an internal error", async () => {
+    const { trip, c } = await tripWith(1);
+    const res = await c.call("search_itineraries", { tripId: trip.id, text: "%_".repeat(15) });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/Search text is too long/);
+    expect(res.text).not.toMatch(/Internal error/);
+  });
+
   it("filters by type, date range and text", async () => {
     const { trip, owner, c } = await ownerTrip();
     const a = await seedItinerary(trip.id, { content: { name: "Louvre visit", startTime: "2090-07-01T10:00" } });

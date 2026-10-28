@@ -1,6 +1,7 @@
 // services/itineraries.ts gaps not covered by test/itineraries.service.test.ts: viewer projection
 // per type and role, flight normalization of legacy rows, Editor-required writes with DB-state
 // assertions, non-member not_found on every function, and cross-trip search projection.
+import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "../src/db";
@@ -12,7 +13,10 @@ import {
   getItinerary,
   listItineraries,
   normalizeFlightContent,
+  SEARCH_HARD_CAP,
+  SEARCH_TEXT_MAX_PATTERN_BYTES,
   searchItineraries,
+  searchItinerariesWithMeta,
   toViewerResponse,
   updateItinerary,
   type CreateItineraryInput,
@@ -447,5 +451,166 @@ describe("searchItineraries: filters", () => {
 
   it("text filter respects membership: a non-member's text match on another trip is not returned", async () => {
     expect(await searchItineraries(testDb(), auth("outsider"), { text: "Museum" })).toEqual([]);
+  });
+});
+
+describe("searchItineraries: hard cap", () => {
+  const BULK = 1000;
+  // Sorts after every fixture id ("...-8000-..."), so the fixture rows are inside the first-N-by-id window.
+  const bulkId = (i: number) => `00000000-0000-4000-8001-${String(i).padStart(12, "0")}`;
+
+  async function seedBulk(n: number): Promise<void> {
+    const ts = new Date().toISOString();
+    const stmt = env.DB.prepare(
+      "INSERT INTO itineraries (id, trip_id, type, status, schema_version, content, confirmation_number, total_cost, currency, notes, created_at, updated_at) " +
+        "VALUES (?, ?, 'Activity', 'Confirmed', 1, ?, 'CONF-FAKE-BULK', NULL, NULL, NULL, ?, ?)"
+    );
+    const all = Array.from({ length: n }, (_, i) =>
+      stmt.bind(bulkId(i), IDS.trip, JSON.stringify({ name: `Bulk ${i}`, startTime: "2095-01-01T10:00" }), ts, ts)
+    );
+    for (let i = 0; i < all.length; i += 250) await env.DB.batch(all.slice(i, i + 250));
+  }
+
+  it("exports a cap of 1000", () => {
+    expect(SEARCH_HARD_CAP).toBe(1000);
+  });
+
+  it("over the cap: truncated, at most SEARCH_HARD_CAP rows, first N by id, still time-ordered and projected per row", async () => {
+    await seedBulk(BULK); // trip now has 8 + 1000 rows, otherTrip 1: 1009 candidates for admin
+    await addParticipant(IDS.otherTrip, w.users.viewer.id, "Editor");
+
+    const admin = await searchItinerariesWithMeta(testDb(), auth("admin"));
+    expect(admin.truncated).toBe(true);
+    expect(admin.items).toHaveLength(SEARCH_HARD_CAP);
+    const got = new Set(ids(admin.items));
+    for (const id of [...ALL_TRIP_ITEMS, IT.otherTripActivity]) expect(got.has(id), id).toBe(true);
+    // The 9 highest ids fall outside the cap.
+    for (let i = BULK - 9; i < BULK; i++) expect(got.has(bulkId(i)), bulkId(i)).toBe(false);
+    expect(got.has(bulkId(BULK - 10))).toBe(true);
+    // Output order is still by time: bulk rows (2095) after every fixture row.
+    expect(ids(admin.items).slice(-991).every((id) => id.includes("-8001-"))).toBe(true);
+    // The array form returns the same items.
+    expect(ids(await searchItineraries(testDb(), auth("admin")))).toEqual(ids(admin.items));
+
+    // Viewer on trip, Editor on otherTrip: capped path still projects row by row.
+    const viewer = await searchItinerariesWithMeta(testDb(), auth("viewer"));
+    expect(viewer.truncated).toBe(true);
+    expect(viewer.items.length).toBeLessThanOrEqual(SEARCH_HARD_CAP);
+    for (const r of viewer.items.filter((x) => x.tripId === IDS.trip)) {
+      for (const k of SENSITIVE) expect(allKeys(r).has(k), `${r.id} ${k}`).toBe(false);
+    }
+    const other = viewer.items.find((r) => r.id === IT.otherTripActivity) as any;
+    expect(other).toBeDefined();
+    expect(other.confirmationNumber).toBe("CONF-FAKE-0001");
+
+    // Filters that narrow the SQL candidate set below the cap are not truncated.
+    const rail = await searchItinerariesWithMeta(testDb(), auth("admin"), { types: ["Rail"] });
+    expect(rail.truncated).toBe(false);
+    expect(ids(rail.items)).toEqual([IT.rail]);
+  });
+
+  it("under the cap: not truncated, same items as searchItineraries", async () => {
+    const r = await searchItinerariesWithMeta(testDb(), auth("owner"));
+    expect(r.truncated).toBe(false);
+    expect(ids(r.items)).toEqual(ids(await searchItineraries(testDb(), auth("owner"))));
+    expect(ids(r.items).sort()).toEqual([...ALL_TRIP_ITEMS].sort());
+  });
+
+  it("an injected lower cap truncates to the first N by id; exactly N candidates is not truncated", async () => {
+    const byId = [...ALL_TRIP_ITEMS].sort();
+    const r = await searchItinerariesWithMeta(testDb(), auth("owner"), {}, { cap: 3 });
+    expect(r.truncated).toBe(true);
+    expect(ids(r.items).sort()).toEqual(byId.slice(0, 3));
+    const exact = await searchItinerariesWithMeta(testDb(), auth("owner"), {}, { cap: ALL_TRIP_ITEMS.length });
+    expect(exact.truncated).toBe(false);
+    expect(exact.items).toHaveLength(ALL_TRIP_ITEMS.length);
+    // The cap can only be lowered, never raised past SEARCH_HARD_CAP; non-positive clamps to 1.
+    expect((await searchItinerariesWithMeta(testDb(), auth("owner"), {}, { cap: 0 })).items).toHaveLength(1);
+  });
+
+  it("an injected cap above SEARCH_HARD_CAP is clamped", async () => {
+    await seedBulk(BULK);
+    const r = await searchItinerariesWithMeta(testDb(), auth("admin"), {}, { cap: 5000 });
+    expect(r.truncated).toBe(true);
+    expect(r.items).toHaveLength(SEARCH_HARD_CAP);
+  });
+
+  it("batched role lookup keeps getMembership rules: unknown stored role is Viewer", async () => {
+    await addParticipant(IDS.otherTrip, w.users.editor.id, "Weird" as never);
+    const rows = await searchItineraries(testDb(), auth("editor"));
+    const other = rows.find((r) => r.id === IT.otherTripActivity);
+    expect(other).toBeDefined();
+    for (const k of SENSITIVE) expect(allKeys(other).has(k)).toBe(false);
+    // Editor on the main trip still gets full rows there.
+    expect((rows.find((r) => r.id === IT.flight) as any).confirmationNumber).toBeDefined();
+  });
+});
+
+describe("searchItineraries: text pattern length (D1 LIKE limit)", () => {
+  const TOO_LONG = "Search text is too long; use a shorter phrase";
+  const bytes = (s: string) => new TextEncoder().encode(s).length;
+  // Pattern = "%" + escaped text + "%", so the text budget is the limit minus the two wrappers.
+  const BUDGET = () => SEARCH_TEXT_MAX_PATTERN_BYTES - 2;
+
+  async function expectTooLong(text: string): Promise<void> {
+    const err = await errorOf(searchItinerariesWithMeta(testDb(), auth("owner"), { text }));
+    expect(err).toBeInstanceOf(ServiceError);
+    expect((err as ServiceError).code).toBe("validation");
+    expect((err as ServiceError).message).toBe(TOO_LONG);
+    expect((err as Error).message).not.toContain(text.slice(0, 5));
+    expect(String((err as Error).message)).not.toMatch(/D1_ERROR|SQLITE/);
+  }
+
+  it("exports the measured D1 limit of 50 bytes", () => {
+    expect(SEARCH_TEXT_MAX_PATTERN_BYTES).toBe(50);
+  });
+
+  it("a needle at the boundary reaches D1 and succeeds, for every role and with tripId", async () => {
+    const needle = "a".repeat(BUDGET());
+    for (const a of ["owner", "viewer", "admin", "outsider"] as const) {
+      expect(await searchItineraries(testDb(), auth(a), { text: needle }), a).toEqual([]);
+    }
+    expect(await searchItineraries(testDb(), auth("owner"), { tripId: IDS.trip, text: needle })).toEqual([]);
+  });
+
+  it("a boundary-length needle still matches: stored notes containing it are found", async () => {
+    // 44 letters + "%_" (escaped to 4 bytes) = 48 bytes, 50 with the wrappers: exactly the limit.
+    const needle = "N".repeat(BUDGET() - 4) + "%_";
+    expect(bytes(`%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`)).toBe(SEARCH_TEXT_MAX_PATTERN_BYTES);
+    await testDb().update(itineraries).set({ notes: `before ${needle} after` }).where(eq(itineraries.id, IT.rail));
+    expect(ids(await searchItineraries(testDb(), auth("owner"), { text: needle }))).toEqual([IT.rail]);
+  });
+
+  it("boundary + 1 is a validation ServiceError, not a D1 error", async () => {
+    await expectTooLong("a".repeat(BUDGET() + 1));
+  });
+
+  it("a needle of % and _ that is short in characters but long once escaped is rejected", async () => {
+    // 25 chars, 50 bytes escaped, 52 with wrappers.
+    const needle = "%_".repeat(12) + "%";
+    expect(needle.length).toBeLessThan(BUDGET());
+    await expectTooLong(needle);
+    await expectTooLong("\\".repeat(25));
+    // 24 wildcards escape to 48 bytes: exactly the limit, accepted.
+    expect(await searchItineraries(testDb(), auth("owner"), { text: "%_".repeat(12) })).toEqual([]);
+  });
+
+  it("a multi-byte needle over the byte limit is rejected though short in characters", async () => {
+    const needle = "\u20ac".repeat(17); // 17 chars, 51 bytes
+    expect(needle.length).toBeLessThan(BUDGET());
+    await expectTooLong(needle);
+    // 16 x 3 bytes = 48: exactly the limit, accepted.
+    expect(await searchItineraries(testDb(), auth("owner"), { text: "\u20ac".repeat(16) })).toEqual([]);
+  });
+
+  it("is checked before membership: a non-member with an over-long needle on a foreign trip gets validation", async () => {
+    const err = await errorOf(searchItineraries(testDb(), auth("outsider"), { tripId: IDS.trip, text: "x".repeat(60) }));
+    expect((err as ServiceError).code).toBe("validation");
+  });
+
+  it("empty text is still no filter", async () => {
+    expect(ids(await searchItineraries(testDb(), auth("owner"), { tripId: IDS.trip, text: "" })).sort()).toEqual(
+      ids(await searchItineraries(testDb(), auth("owner"), { tripId: IDS.trip })).sort()
+    );
   });
 });

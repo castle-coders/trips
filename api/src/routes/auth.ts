@@ -547,6 +547,11 @@ app.openapi(
       const keepUserId = linkToken.userId; // "account A" — the one that generated the token
       console.log("[link] keepUserId:", keepUserId, "mergeUserId:", authUser.id);
 
+      // The token owner may have been deleted since the token was issued. Check before revoking,
+      // so a dead link never disconnects the caller's apps; same response as an unknown token.
+      const keepExists = await db.select({ id: users.id }).from(users).where(eq(users.id, keepUserId)).limit(1);
+      if (!keepExists.length) return c.json({ error: "Token not found or already used" }, 404);
+
       if (keepUserId !== authUser.id) {
         // Merge account B (current user) into account A (token owner)
         console.log("[link] Starting merge:", keepUserId, "<-", authUser.id);
@@ -579,8 +584,9 @@ app.openapi(
         200
       );
     } catch (err: any) {
-      console.error("[link] Error:", err.message, err.stack);
-      return c.json({ error: err.message || "Internal server error" }, 500);
+      // Detail stays server-side: KV/revocation failures must not reach the response body.
+      console.error("[link] Error:", err?.message, err?.stack);
+      return c.json({ error: "Internal server error" }, 500);
     }
   }
 );
@@ -827,6 +833,13 @@ app.post("/link/:token/confirm", async (c) => {
 
     const keepUserId = linkToken.userId;
 
+    // The token owner may have been deleted since the token was issued. Check before revoking,
+    // so a dead link never disconnects the caller's apps; same response as an unknown token.
+    const keepExists = await db.select({ id: users.id }).from(users).where(eq(users.id, keepUserId)).limit(1);
+    if (!keepExists.length) {
+      return htmlError("Link Not Found", "This account link is invalid or has already been used.");
+    }
+
     let authUser = await findUserByEmail(db, identity.email);
     if (!authUser) {
       authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
@@ -962,6 +975,11 @@ app.openapi(
 
       const keepUserId = linkToken.userId;
 
+      // The token owner may have been deleted since the token was issued. Check before revoking,
+      // so a dead link never disconnects the caller's apps; same response as an unknown token.
+      const keepExists = await db.select({ id: users.id }).from(users).where(eq(users.id, keepUserId)).limit(1);
+      if (!keepExists.length) return c.json({ error: "Token not found or already used" }, 404);
+
       let authUser = await findUserByEmail(db, identity.email);
       if (!authUser) {
         authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
@@ -994,8 +1012,9 @@ app.openapi(
         200
       );
     } catch (err: any) {
-      console.error("[link] Error:", err.message, err.stack);
-      return c.json({ error: err.message || "Internal server error" }, 500);
+      // Detail stays server-side: KV/revocation failures must not reach the response body.
+      console.error("[link] Error:", err?.message, err?.stack);
+      return c.json({ error: "Internal server error" }, 500);
     }
   }
 );
