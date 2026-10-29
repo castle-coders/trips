@@ -342,9 +342,9 @@ Extracted into `api/src/services/users.ts` and hooked the same way:
 |---|---|---|
 | `POST /admin/users` | `user.create` | insert users, insert user_emails, event |
 | `PUT /admin/users/:id` | `user.update` | update, event (skipped when diff is empty) |
-| `DELETE /admin/users/:id` | `user.delete` | `revokeAllGrantsForUser` first (KV, as today), then batch delete + event. `metadata: { revokedGrants }`. |
+| `DELETE /admin/users/:id` | `user.delete` | `revokeAllGrantsForUser` first (KV, as today), then batch delete + event. `metadata: { revokedGrants }`. Ordering is fail-closed: if the batch then fails, the grants are already gone (unaudited) and the user row remains; the reverse order would leave live tokens for a deleted user. Merge follows the same order and its metadata carries no grant count. |
 | `PUT /me` | `user.update` | update, event |
-| `POST /me/link` (and admin link paths) | `user_email.link` | insert user_emails, event |
+| `POST /me/link`, `POST /link`, `POST /link/{token}/confirm` | `user.merge` | These flows merge the linking account into the existing one through `mergeAccountsD1`; no path inserts a bare `user_emails` row today. `linkEmail` exists in the users service for a future single-address link and records `user_email.link`. (amended at Phase 1) |
 | `DELETE /me/emails/:id` | `user_email.unlink` | delete, event |
 | `PUT /me/emails/:id/primary` | `user_email.set_primary` | the existing three-statement batch plus event. `before`/`after` are the user_email row; `metadata: { previousPrimaryEmailId }`. |
 | `POST /admin/service-identities` | `service_identity.create` | insert, event |
@@ -471,7 +471,9 @@ The append-only check (10) is a shell script, not a workerd test, because tests 
 3. **Behavior changes to announce** (same list goes in the README rollout notes, as with the MCP behavior changes):
    - A `PUT` whose body matches the stored row no longer bumps `updatedAt` and returns the stored row.
    - Participants, documents and invites routes now return `ServiceError` bodies (`{ error }`), same messages and status codes as before.
-   - Account merge is now atomic.
+   - Account merge is now atomic. Invite acceptance is now atomic (one batch instead of three sequential statements).
+   - `POST /admin/users/merge` returns `404` only for a missing user; any other failure is a `500` through the shared error handler instead of a `404` carrying the internal error text.
+   - `GET /trips/{tripId}/participants` and `GET /trips/{tripId}/documents` return `404` for non-members (previously participants returned the full list to anyone authenticated; documents already returned 404). Decided at Phase 1, 2026-10-28: the extracted services apply `requireTripRole(..., "Viewer")` on reads like every other service.
 4. **Backfill** (PRD open question). If chosen, `api/scripts/backfill-audit.sql` inserts one `create` event per existing row in trips, itineraries, expenses, participants, documents and invites with `channel = "backfill"`, `actor_user_id = NULL`, `actor_name = "System"`, `actor_email = ""`, `actor_role = ""`, `created_at = <row>.created_at`, `after` built with SQLite `json_object(...)` over the allow-listed columns, `entity_label` from the same expressions `labelFor` uses. It is idempotent (skips rows that already have a `create` event) and run once with `wrangler d1 execute`. Not run by default.
 
 ## 13. Open Items

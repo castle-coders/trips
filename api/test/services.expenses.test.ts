@@ -1,8 +1,10 @@
 // services/expenses.ts: listExpenses (payerName), createExpense, updateExpense, deleteExpense.
 // Called directly (no requireTripEditor middleware in front), as the MCP tools call them.
+// Every write records exactly one audit event in the same batch (TDD 7.2); the audit
+// assertions live in the "audit events" block at the bottom.
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AuthUser } from "../src/db";
+import type { Actor as AuthActor } from "../src/db";
 import { expenses } from "../src/db/schema";
 import { createExpense, deleteExpense, listExpenses, updateExpense, type CreateExpense } from "../src/services/expenses";
 import {
@@ -13,13 +15,13 @@ import {
   seedExpense,
   seedRoleWorld,
   testDb,
-  toAuth,
   type Actor,
   type RoleWorld,
 } from "./helpers";
+import { auditRows, toActor } from "./helpers/audit";
 
 let w: RoleWorld;
-const auth = (a: Actor): AuthUser => toAuth(w.users[a]);
+const auth = (a: Actor): AuthActor => toActor(w.users[a]);
 
 const EX = {
   paidByEditor: "00000000-0000-4000-8000-0000000f0001",
@@ -150,5 +152,156 @@ describe("deleteExpense", () => {
     await expectServiceError(deleteExpense(testDb(), auth("outsider"), IDS.trip, EX.noPayer), "not_found", "Trip not found");
     await expectServiceError(deleteExpense(testDb(), auth("outsider"), IDS.otherTrip, EX.noPayer), "not_found", "Expense not found");
     expect(await dbState()).toEqual(before);
+  });
+});
+
+describe("audit events", () => {
+  const SNAPSHOT_KEYS = ["amount", "category", "currency", "description", "id", "payerId", "payerName", "splitType", "tripId"];
+
+  it("createExpense records one expense.create with payerName resolved from the payer participant", async () => {
+    const actor = auth("editor");
+    const row = await createExpense(testDb(), actor, IDS.trip, { ...input, payerId: IDS.viewerP });
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [ev] = rows;
+    expect(ev).toMatchObject({
+      actorUserId: actor.id,
+      actorName: actor.name,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      channel: "web",
+      requestId: "ray-test",
+      tripId: IDS.trip,
+      entityType: "expense",
+      entityId: row.id,
+      entityLabel: "Fake dinner",
+      action: "create",
+      before: null,
+      changes: null,
+      metadata: null,
+    });
+    expect(Object.keys(ev.after as object).sort()).toEqual(SNAPSHOT_KEYS);
+    expect(ev.after).toMatchObject({ id: row.id, tripId: IDS.trip, payerId: IDS.viewerP, payerName: "Viewer User", amount: 12.5 });
+  });
+
+  it("createExpense with no payer stores payerName null", async () => {
+    const row = await createExpense(testDb(), auth("owner"), IDS.trip, input);
+    const [ev] = await auditRows();
+    expect(ev.entityId).toBe(row.id);
+    expect(ev.after).toMatchObject({ payerId: null, payerName: null });
+  });
+
+  it("a rejected create records nothing", async () => {
+    await expectServiceError(createExpense(testDb(), auth("viewer"), IDS.trip, input), "forbidden");
+    await expectServiceError(createExpense(testDb(), auth("admin"), IDS.missing, input), "not_found");
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("updateExpense records one expense.update; changing the payer lists both payerId and payerName", async () => {
+    const actor = auth("owner");
+    await updateExpense(testDb(), actor, IDS.trip, EX.paidByEditor, { payerId: IDS.guestP, amount: 7 });
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [ev] = rows;
+    expect(ev).toMatchObject({
+      actorUserId: actor.id,
+      tripId: IDS.trip,
+      entityType: "expense",
+      entityId: EX.paidByEditor,
+      entityLabel: "Taxi",
+      action: "update",
+    });
+    expect(Object.keys(ev.before as object).sort()).toEqual(SNAPSHOT_KEYS);
+    expect(Object.keys(ev.after as object).sort()).toEqual(SNAPSHOT_KEYS);
+    expect(ev.before).toMatchObject({ payerId: IDS.editorP, payerName: "Editor User", amount: 42.5 });
+    expect(ev.after).toMatchObject({ payerId: IDS.guestP, payerName: "Guest Traveler", amount: 7 });
+    expect(ev.changes).toEqual({
+      amount: { from: 42.5, to: 7 },
+      payerId: { from: IDS.editorP, to: IDS.guestP },
+      payerName: { from: "Editor User", to: "Guest Traveler" },
+    });
+  });
+
+  it("clearing the payer records payerName going to null; before and after never carry timestamps", async () => {
+    await updateExpense(testDb(), auth("editor"), IDS.trip, EX.paidByGuest, { payerId: null });
+    const [ev] = await auditRows();
+    expect(ev.changes).toEqual({
+      payerId: { from: IDS.guestP, to: null },
+      payerName: { from: "Guest Traveler", to: null },
+    });
+    expect(ev.before).not.toHaveProperty("updatedAt");
+    expect(ev.after).not.toHaveProperty("createdAt");
+  });
+
+  it("a payer that is not a participant of this trip snapshots payerName null (lookup is trip-scoped)", async () => {
+    // expenses.payerId has a FK to participants, so a dangling payer cannot exist; a payer on
+    // another trip is the reachable case, and it resolves to null exactly as listExpenses does.
+    const crossTrip = await seedExpense(IDS.trip, { description: "Cross", payerId: IDS.outsiderP });
+    await updateExpense(testDb(), auth("editor"), IDS.trip, crossTrip.id, { amount: 1 });
+    const [ev] = await auditRows();
+    expect(ev.before).toMatchObject({ payerId: IDS.outsiderP, payerName: null });
+    expect(ev.after).toMatchObject({ payerId: IDS.outsiderP, payerName: null });
+    expect(ev.changes).toEqual({ amount: { from: 42.5, to: 1 } });
+  });
+
+  it("a no-op update records nothing, writes nothing and returns the stored row with updatedAt untouched", async () => {
+    const [stored] = await testDb().select().from(expenses).where(eq(expenses.id, EX.paidByEditor));
+    const before = await dbState();
+    const row = await updateExpense(testDb(), auth("editor"), IDS.trip, EX.paidByEditor, {
+      description: stored.description,
+      amount: stored.amount,
+      payerId: stored.payerId,
+    });
+    expect(row).toEqual(stored);
+    expect(row.updatedAt).toBe(stored.updatedAt);
+    expect(await dbState()).toEqual(before);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("an empty patch is a no-op too", async () => {
+    const before = await dbState();
+    await updateExpense(testDb(), auth("editor"), IDS.trip, EX.noPayer, {});
+    expect(await dbState()).toEqual(before);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("a rejected update records nothing", async () => {
+    await expectServiceError(updateExpense(testDb(), auth("viewer"), IDS.trip, EX.noPayer, { amount: 1 }), "forbidden");
+    await expectServiceError(updateExpense(testDb(), auth("outsider"), IDS.otherTrip, EX.noPayer, { amount: 1 }), "not_found");
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("deleteExpense records one expense.delete with the before snapshot including payerName", async () => {
+    const actor = auth("admin");
+    await deleteExpense(testDb(), actor, IDS.trip, EX.paidByGuest);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [ev] = rows;
+    expect(ev).toMatchObject({
+      actorUserId: actor.id,
+      actorRole: "admin",
+      tripId: IDS.trip,
+      entityType: "expense",
+      entityId: EX.paidByGuest,
+      entityLabel: "Snacks",
+      action: "delete",
+      after: null,
+      changes: null,
+    });
+    expect(Object.keys(ev.before as object).sort()).toEqual(SNAPSHOT_KEYS);
+    expect(ev.before).toMatchObject({ id: EX.paidByGuest, payerId: IDS.guestP, payerName: "Guest Traveler" });
+  });
+
+  it("a rejected delete records nothing", async () => {
+    await expectServiceError(deleteExpense(testDb(), auth("viewer"), IDS.trip, EX.noPayer), "forbidden");
+    await expectServiceError(deleteExpense(testDb(), auth("outsider"), IDS.otherTrip, EX.noPayer), "not_found");
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("actor channel and clientId are copied from the Actor (MCP OAuth caller)", async () => {
+    const actor = toActor(w.users.editor, { channel: "mcp_oauth", clientId: "client-fake", requestId: null });
+    await createExpense(testDb(), actor, IDS.trip, input);
+    const [ev] = await auditRows();
+    expect(ev).toMatchObject({ channel: "mcp_oauth", clientId: "client-fake", requestId: null });
   });
 });

@@ -1,9 +1,10 @@
 import type { z } from "@hono/zod-openapi";
-import { and, asc, eq, gte, isNotNull } from "drizzle-orm";
-import type { AuthUser } from "../db";
-import { participants, trips } from "../db/schema";
+import { and, asc, count, eq, gte, isNotNull } from "drizzle-orm";
+import type { Actor, AuthUser } from "../db";
+import { documents, expenses, invites, itineraries, participants, trips } from "../db/schema";
 import type { CreateTripSchema, UpdateTripSchema } from "../schemas/trip";
 import { isAdmin, isTripRole, requireTripRole, type Db, type TripRole } from "./access";
+import { auditInsert } from "./audit";
 import { ServiceError } from "./errors";
 
 export type Trip = typeof trips.$inferSelect;
@@ -99,13 +100,16 @@ export async function getTrip(
 }
 
 /**
- * Create a trip and make the caller its Owner participant (MCP_TDD 4.3), in one D1 batch.
+ * Create a trip and make the caller its Owner participant (MCP_TDD 4.3), in one D1 batch
+ * with the `trip.create` event (AUDIT_TDD 7.2: the event covers the owner row via
+ * `metadata.ownerParticipantId`; no separate `participant.create`).
  * Global viewers are forbidden (matches requireTripEditor). Returns the bare trip row.
  */
-export async function createTrip(db: Db, user: AuthUser, input: CreateTrip): Promise<Trip> {
-  if (user.role === "viewer") throw new ServiceError("forbidden", "Forbidden: Viewers cannot create trips");
+export async function createTrip(db: Db, actor: Actor, input: CreateTrip): Promise<Trip> {
+  if (actor.role === "viewer") throw new ServiceError("forbidden", "Forbidden: Viewers cannot create trips");
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
+  const ownerParticipantId = crypto.randomUUID();
   const row: Trip = {
     id,
     name: input.name,
@@ -117,41 +121,97 @@ export async function createTrip(db: Db, user: AuthUser, input: CreateTrip): Pro
     createdAt: now,
     updatedAt: now,
   };
+  const audit = auditInsert(db, {
+    actor,
+    tripId: id,
+    entityType: "trip",
+    entityId: id,
+    action: "create",
+    after: row,
+    metadata: { ownerParticipantId },
+  });
+  if (!audit) throw new Error("auditInsert returned null for trip.create");
   await db.batch([
     db.insert(trips).values(row),
     db.insert(participants).values({
-      id: crypto.randomUUID(),
+      id: ownerParticipantId,
       tripId: id,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
+      userId: actor.id,
+      email: actor.email,
+      name: actor.name,
       role: "Owner",
       traveling: false,
       createdAt: now,
       updatedAt: now,
     }),
+    audit,
   ]);
   return row;
 }
 
-/** Patch a trip. Requires Editor. */
-export async function updateTrip(db: Db, user: AuthUser, tripId: string, patch: UpdateTrip): Promise<Trip> {
-  await requireTripRole(db, user, tripId, "Editor");
+/**
+ * Patch a trip. Requires Editor. Records `trip.update` in the same batch as the UPDATE.
+ * When the allow-listed diff is empty (AUDIT_TDD 7.1 / 12), nothing is written and the stored
+ * row is returned with `updatedAt` untouched. That is safe here only because every column
+ * `UpdateTrip` can set is in the trip snapshot allow-list.
+ */
+export async function updateTrip(db: Db, actor: Actor, tripId: string, patch: UpdateTrip): Promise<Trip> {
+  await requireTripRole(db, actor, tripId, "Editor");
   const existing = await db.select().from(trips).where(eq(trips.id, tripId));
   if (!existing.length) throw new ServiceError("not_found", "Trip not found");
-  const updated = {
-    ...existing[0],
+  const before = existing[0];
+  const updated: Trip = {
+    ...before,
     ...patch,
     updatedAt: new Date().toISOString(),
   };
-  await db.update(trips).set(updated).where(eq(trips.id, tripId));
+  const audit = auditInsert(db, {
+    actor,
+    tripId,
+    entityType: "trip",
+    entityId: tripId,
+    action: "update",
+    before,
+    after: updated,
+  });
+  if (!audit) return before;
+  await db.batch([db.update(trips).set(updated).where(eq(trips.id, tripId)), audit]);
   return updated;
 }
 
-/** Delete a trip. Requires Owner. */
-export async function deleteTrip(db: Db, user: AuthUser, tripId: string): Promise<void> {
-  await requireTripRole(db, user, tripId, "Owner", { forbidden: "Forbidden: only trip Owners can delete trips" });
+/**
+ * Delete a trip. Requires Owner. Children cascade in the database and get no events of their
+ * own; their counts are read before the batch into the `trip.delete` metadata (AUDIT_TDD 7.2).
+ */
+export async function deleteTrip(db: Db, actor: Actor, tripId: string): Promise<void> {
+  await requireTripRole(db, actor, tripId, "Owner", { forbidden: "Forbidden: only trip Owners can delete trips" });
   const existing = await db.select().from(trips).where(eq(trips.id, tripId));
   if (!existing.length) throw new ServiceError("not_found", "Trip not found");
-  await db.delete(trips).where(eq(trips.id, tripId));
+  const before = existing[0];
+
+  const [its, exps, ps, docs, invs] = await db.batch([
+    db.select({ n: count() }).from(itineraries).where(eq(itineraries.tripId, tripId)),
+    db.select({ n: count() }).from(expenses).where(eq(expenses.tripId, tripId)),
+    db.select({ n: count() }).from(participants).where(eq(participants.tripId, tripId)),
+    db.select({ n: count() }).from(documents).where(eq(documents.tripId, tripId)),
+    db.select({ n: count() }).from(invites).where(eq(invites.tripId, tripId)),
+  ]);
+
+  const audit = auditInsert(db, {
+    actor,
+    tripId,
+    entityType: "trip",
+    entityId: tripId,
+    action: "delete",
+    before,
+    metadata: {
+      itineraries: its[0].n,
+      expenses: exps[0].n,
+      participants: ps[0].n,
+      documents: docs[0].n,
+      invites: invs[0].n,
+    },
+  });
+  if (!audit) throw new Error("auditInsert returned null for trip.delete");
+  await db.batch([db.delete(trips).where(eq(trips.id, tripId)), audit]);
 }

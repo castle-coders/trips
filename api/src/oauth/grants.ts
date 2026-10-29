@@ -161,6 +161,19 @@ export async function listAllGrants(env: Bindings): Promise<AdminGrantView[]> {
 }
 
 /**
+ * One of `userId`'s grants as a view, or `null` when no grant with that id belongs to the user.
+ * Route handlers read this before `revokeGrant` so the audit event (AUDIT_TDD 7.4) can carry
+ * the grant's client, scopes and creation time after the grant itself is gone from KV.
+ * Throws `OAuthNotConfiguredError` when Stage 2 is off.
+ */
+export async function getGrant(env: Bindings, userId: string, grantId: string): Promise<GrantView | null> {
+  const api = helpers(env);
+  const grant = (await allUserGrants(api, userId)).find((g) => g.id === grantId);
+  if (!grant) return null;
+  return toView(api, new Map(), grant);
+}
+
+/**
  * Revokes `grantId` if, and only if, it is one of `userId`'s grants. Returns `false` (caller
  * answers 404) otherwise, because the library's `revokeGrant` silently no-ops on a wrong pair.
  * On success the grant and all its access and refresh tokens are gone from KV.
@@ -283,6 +296,19 @@ export async function listClients(env: Bindings): Promise<ClientView[]> {
     cursor = page.cursor;
   } while (cursor);
   return out.sort((a, b) => a.clientId.localeCompare(b.clientId));
+}
+
+/**
+ * One stored client as a view (never the secret hash), or `null` when none has that id. CIMD
+ * URL ids are never stored, so they return `null` without a network fetch. Route handlers read
+ * this before `deleteClient` so the audit event (AUDIT_TDD 7.4) can carry the client's name and
+ * redirect URIs. Throws `OAuthNotConfiguredError` when Stage 2 is off.
+ */
+export async function getClient(env: Bindings, clientId: string): Promise<ClientView | null> {
+  const api = helpers(env);
+  if (isCimdClientId(clientId)) return null;
+  const existing = await api.lookupClient(clientId);
+  return existing ? toClientView(existing) : null;
 }
 
 /**

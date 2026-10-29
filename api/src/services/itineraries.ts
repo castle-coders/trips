@@ -1,6 +1,6 @@
 import type { z } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import type { AuthUser } from "../db";
+import type { Actor, AuthUser } from "../db";
 import { itineraries, participants, trips } from "../db/schema";
 import {
   ItineraryViewSchema,
@@ -12,6 +12,7 @@ import {
   type UpdateItinerarySchema,
 } from "../schemas/itinerary";
 import { isAdmin, isTripRole, requireTripRole, type Db, type TripRole } from "./access";
+import { auditInsert, type AuditStatement, type EventInput } from "./audit";
 import { ServiceError } from "./errors";
 
 const CURRENT_SCHEMA_VERSION = 1;
@@ -119,6 +120,16 @@ async function findItinerary(db: Db, tripId: string, itineraryId: string) {
 }
 
 /**
+ * The audit event for an itinerary create or delete. `auditInsert` only returns null for an
+ * update with an empty diff, so for these actions a null is a programming error, not a no-op.
+ */
+function itineraryEvent(db: Db, input: Omit<EventInput, "entityType">): AuditStatement {
+  const stmt = auditInsert(db, { ...input, entityType: "itinerary" });
+  if (stmt === null) throw new Error(`auditInsert returned null for itinerary.${input.action}`);
+  return stmt;
+}
+
+/**
  * List a trip's itineraries, projected by the caller's role.
  * Viewer+. Non-member: not_found "Trip not found". Admin on a nonexistent trip: [].
  * Row order is the database's (no ORDER BY), as today.
@@ -150,14 +161,16 @@ export async function getItinerary(
  * missing trip (reachable by admins): not_found "Trip not found";
  * invalid content: validation "Invalid content for type" with flattened zod details.
  * Returns the full row (no projection; only Editor+ get here).
+ * Records `itinerary.create` in the same batch as the insert; `after` is the row as stored
+ * (content already validated and normalized).
  */
 export async function createItinerary(
   db: Db,
-  user: AuthUser,
+  actor: Actor,
   tripId: string,
   input: CreateItineraryInput
 ): Promise<Itinerary> {
-  await requireTripRole(db, user, tripId, "Editor", { notFound: TRIP_NOT_FOUND });
+  await requireTripRole(db, actor, tripId, "Editor", { notFound: TRIP_NOT_FOUND });
 
   const trip = await db.select({ id: trips.id }).from(trips).where(eq(trips.id, tripId));
   if (!trip.length) throw new ServiceError("not_found", TRIP_NOT_FOUND);
@@ -181,7 +194,8 @@ export async function createItinerary(
     createdAt: now,
     updatedAt: now,
   };
-  await db.insert(itineraries).values(row);
+  const audit = itineraryEvent(db, { actor, tripId, entityId: row.id, action: "create", after: row });
+  await db.batch([db.insert(itineraries).values(row), audit]);
   return row;
 }
 
@@ -191,15 +205,19 @@ export async function createItinerary(
  * Content (when present) is validated against the patched type, else the stored type.
  * Changing type without content does not revalidate stored content.
  * Returns the merged row without flight normalization (as today).
+ * Records `itinerary.update` in the same batch as the update. A patch that changes nothing
+ * (every audited column equal after the merge) writes nothing, leaves `updatedAt` untouched and
+ * returns the stored row (AUDIT_TDD 12). Safe only while every updatable column is in the
+ * itinerary snapshot allow-list; keep them in step.
  */
 export async function updateItinerary(
   db: Db,
-  user: AuthUser,
+  actor: Actor,
   tripId: string,
   itineraryId: string,
   patch: UpdateItineraryInput
 ): Promise<Itinerary> {
-  await requireTripRole(db, user, tripId, "Editor", { notFound: ITEM_NOT_FOUND });
+  await requireTripRole(db, actor, tripId, "Editor", { notFound: ITEM_NOT_FOUND });
   const existing = await findItinerary(db, tripId, itineraryId);
   if (!existing) throw new ServiceError("not_found", ITEM_NOT_FOUND);
 
@@ -218,19 +236,31 @@ export async function updateItinerary(
     ...body,
     updatedAt: new Date().toISOString(),
   };
-  await db.update(itineraries).set(updated).where(eq(itineraries.id, itineraryId));
+  const audit = auditInsert(db, {
+    actor,
+    tripId,
+    entityType: "itinerary",
+    entityId: itineraryId,
+    action: "update",
+    before: existing,
+    after: updated,
+  });
+  if (audit === null) return existing as Itinerary;
+
+  await db.batch([db.update(itineraries).set(updated).where(eq(itineraries.id, itineraryId)), audit]);
   return updated as Itinerary;
 }
 
 /**
  * Delete an itinerary. Editor+. Non-member and missing itinerary: not_found "Not found";
- * Viewer: forbidden "Forbidden".
+ * Viewer: forbidden "Forbidden". Records `itinerary.delete` (with `before`) in the same batch.
  */
-export async function deleteItinerary(db: Db, user: AuthUser, tripId: string, itineraryId: string): Promise<void> {
-  await requireTripRole(db, user, tripId, "Editor", { notFound: ITEM_NOT_FOUND });
+export async function deleteItinerary(db: Db, actor: Actor, tripId: string, itineraryId: string): Promise<void> {
+  await requireTripRole(db, actor, tripId, "Editor", { notFound: ITEM_NOT_FOUND });
   const existing = await findItinerary(db, tripId, itineraryId);
   if (!existing) throw new ServiceError("not_found", ITEM_NOT_FOUND);
-  await db.delete(itineraries).where(eq(itineraries.id, itineraryId));
+  const audit = itineraryEvent(db, { actor, tripId, entityId: itineraryId, action: "delete", before: existing });
+  await db.batch([db.delete(itineraries).where(eq(itineraries.id, itineraryId)), audit]);
 }
 
 // ---------------------------------------------------------------------------

@@ -4,8 +4,9 @@
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthUser } from "../src/db";
+import type { Actor as DbActor } from "../src/db";
 import { itineraries } from "../src/db/schema";
+import { SNAPSHOT_COLUMNS } from "../src/services/audit";
 import { ServiceError } from "../src/services/errors";
 import {
   createItinerary,
@@ -40,9 +41,11 @@ import {
   type Actor,
   type RoleWorld,
 } from "./helpers";
+import { auditRows, toActor } from "./helpers/audit";
 
 let w: RoleWorld;
-const auth = (a: Actor): AuthUser => toAuth(w.users[a]);
+// An Actor satisfies AuthUser, so the same value serves reads and (audited) writes.
+const auth = (a: Actor): DbActor => toActor(toAuth(w.users[a]));
 const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id);
 const SENSITIVE = ["confirmationNumber", "ticketNumber"];
 
@@ -325,6 +328,194 @@ describe("Editor-required writes", () => {
     await expectServiceError(getItinerary(testDb(), auth("viewer"), IDS.trip, missing), "not_found", "Not found");
     await expectServiceError(updateItinerary(testDb(), auth("editor"), IDS.trip, missing, { notes: "x" }), "not_found", "Not found");
     await expectServiceError(deleteItinerary(testDb(), auth("editor"), IDS.trip, missing), "not_found", "Not found");
+  });
+});
+
+describe("audit events on writes", () => {
+  const LEG_TIME = "2030-01-10T09:00";
+  const NEW_LEG_TIME = "2030-01-10T10:30";
+
+  it("create records exactly one itinerary.create with the stored (validated) row as after", async () => {
+    const row = await createItinerary(testDb(), auth("editor"), IDS.trip, {
+      type: "Flight",
+      status: "Confirmed",
+      content: flightContent(IDS.viewerP),
+      confirmationNumber: "CONF-FAKE-NEW",
+      notes: "fake",
+    });
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    const [e] = events;
+    expect(e).toMatchObject({
+      tripId: IDS.trip,
+      entityType: "itinerary",
+      entityId: row.id,
+      action: "create",
+      entityLabel: "Test Air TA100 AAA to BBB",
+      actorUserId: w.users.editor.id,
+      actorEmail: w.users.editor.email,
+      channel: "web",
+      before: null,
+      changes: null,
+    });
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, row.id));
+    const { createdAt: _c, updatedAt: _u, ...snapshot } = stored;
+    expect(e.after).toEqual(snapshot);
+    expect(e.after).not.toHaveProperty("createdAt");
+    expect(e.after).not.toHaveProperty("updatedAt");
+  });
+
+  it("update changing one flight leg's departure time records exactly that JSON path", async () => {
+    const content = flightContent(IDS.editorP);
+    expect(content.legs[0].departureTime).toBe(LEG_TIME);
+    const patched = { ...content, legs: [{ ...content.legs[0], departureTime: NEW_LEG_TIME }] };
+    const updated = await updateItinerary(testDb(), auth("editor"), IDS.trip, IT.flight, { content: patched });
+    expect((updated.content as any).legs[0].departureTime).toBe(NEW_LEG_TIME);
+
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    const [e] = events;
+    expect(e).toMatchObject({ tripId: IDS.trip, entityType: "itinerary", entityId: IT.flight, action: "update" });
+    expect(e.changes).toEqual({ "content.legs[0].departureTime": { from: LEG_TIME, to: NEW_LEG_TIME } });
+    expect((e.before as any).content.legs[0].departureTime).toBe(LEG_TIME);
+    expect((e.after as any).content.legs[0].departureTime).toBe(NEW_LEG_TIME);
+  });
+
+  it("a content-only update has no top-level column keys in changes", async () => {
+    await updateItinerary(testDb(), auth("owner"), IDS.trip, IT.activity, {
+      content: { name: "Kayak (moved)", startTime: "2030-01-11T10:00" },
+    });
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    const keys = Object.keys(events[0].changes as Record<string, unknown>);
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((k) => k.startsWith("content."))).toBe(true);
+    expect(keys).not.toContain("content");
+  });
+
+  it("a column-only update records the column and nothing under content", async () => {
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.activity));
+    await updateItinerary(testDb(), auth("editor"), IDS.trip, IT.activity, { notes: "changed" });
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    expect(events[0].changes).toEqual({ notes: { from: stored.notes, to: "changed" } });
+  });
+
+  it("a no-op update records nothing, writes nothing and returns the stored row with updatedAt untouched", async () => {
+    const [before] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.flight));
+    const state = await dbState();
+    const result = await updateItinerary(testDb(), auth("editor"), IDS.trip, IT.flight, {
+      content: flightContent(IDS.editorP),
+      confirmationNumber: before.confirmationNumber,
+      notes: before.notes,
+    });
+    expect(result).toEqual(before);
+    const [after] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.flight));
+    expect(after.updatedAt).toBe(before.updatedAt);
+    expect(await dbState()).toEqual(state);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("delete records exactly one itinerary.delete with before and no after", async () => {
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.flight));
+    await deleteItinerary(testDb(), auth("admin"), IDS.trip, IT.flight);
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    const { createdAt: _c, updatedAt: _u, ...snapshot } = stored;
+    expect(events[0]).toMatchObject({
+      tripId: IDS.trip,
+      entityType: "itinerary",
+      entityId: IT.flight,
+      action: "delete",
+      entityLabel: "Test Air TA100 AAA to BBB",
+      actorUserId: w.users.admin.id,
+      after: null,
+      changes: null,
+    });
+    expect(events[0].before).toEqual(snapshot);
+  });
+
+  it("rejected writes (forbidden, validation, not_found) record no event", async () => {
+    await expectServiceError(createItinerary(testDb(), auth("viewer"), IDS.trip, { type: "Activity", status: "Pending", content: { name: "x" } }), "forbidden");
+    await expectServiceError(updateItinerary(testDb(), auth("editor"), IDS.trip, IT.flight, { content: { legs: [] } }), "validation");
+    await expectServiceError(deleteItinerary(testDb(), auth("editor"), IDS.trip, "00000000-0000-4000-8000-00000000eeee"), "not_found");
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("update snapshots carry exactly the allow-listed itinerary columns and the event carries every actor column", async () => {
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.lodging));
+    const actor = auth("owner");
+    await updateItinerary(testDb(), actor, IDS.trip, IT.lodging, { notes: "late check-in" });
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    const [e] = events;
+    const keys = [...SNAPSHOT_COLUMNS.itinerary].sort();
+    expect(Object.keys(e.before as object).sort()).toEqual(keys);
+    expect(Object.keys(e.after as object).sort()).toEqual(keys);
+    expect(e.before).not.toHaveProperty("updatedAt");
+    expect(e.after).not.toHaveProperty("createdAt");
+    const { createdAt: _c, updatedAt: _u, ...beforeSnapshot } = stored;
+    expect(e.before).toEqual(beforeSnapshot);
+    expect(e).toMatchObject({
+      actorUserId: actor.id,
+      actorName: actor.name,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      channel: "web",
+      clientId: null,
+      requestId: "ray-test",
+      tripId: IDS.trip,
+      entityLabel: "Fake Inn",
+      metadata: null,
+    });
+  });
+
+  it("a partial patch that re-sends identical values alongside one change records only that change", async () => {
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.activity));
+    expect(stored.status).toBe("Confirmed");
+    await updateItinerary(testDb(), auth("editor"), IDS.trip, IT.activity, {
+      status: "Cancelled",
+      notes: stored.notes,
+      confirmationNumber: stored.confirmationNumber,
+      content: stored.content as Record<string, unknown>,
+    });
+    const events = await auditRows();
+    expect(events).toHaveLength(1);
+    expect(events[0].changes).toEqual({ status: { from: "Confirmed", to: "Cancelled" } });
+    expect(events[0].entityLabel).toBe("Museum");
+  });
+
+  it("a partial patch that only re-sends identical values is a no-op: no event, updatedAt untouched", async () => {
+    const [stored] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.activity));
+    const result = await updateItinerary(testDb(), auth("editor"), IDS.trip, IT.activity, { notes: stored.notes });
+    expect(result).toEqual(stored);
+    const [after] = await testDb().select().from(itineraries).where(eq(itineraries.id, IT.activity));
+    expect(after.updatedAt).toBe(stored.updatedAt);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("every itinerary write is one event per write across a create, update, no-op and delete sequence", async () => {
+    const row = await createItinerary(testDb(), auth("owner"), IDS.trip, { type: "Activity", status: "Pending", content: { name: "Seq", startTime: "2090-03-03T10:00" } });
+    expect(await auditRows()).toHaveLength(1);
+    await updateItinerary(testDb(), auth("owner"), IDS.trip, row.id, { status: "Confirmed" });
+    expect(await auditRows()).toHaveLength(2);
+    await updateItinerary(testDb(), auth("owner"), IDS.trip, row.id, { status: "Confirmed" });
+    expect(await auditRows()).toHaveLength(2);
+    await deleteItinerary(testDb(), auth("owner"), IDS.trip, row.id);
+    const events = await auditRows();
+    expect(events).toHaveLength(3);
+    expect(events.map((e) => [e.action, e.entityId, e.entityLabel])).toEqual([
+      ["create", row.id, "Seq"],
+      ["update", row.id, "Seq"],
+      ["delete", row.id, "Seq"],
+    ]);
+  });
+
+  it("MCP channel actor fields are copied onto the event", async () => {
+    const actor = toActor(toAuth(w.users.editor), { channel: "mcp_oauth", clientId: "client-fake", requestId: "ray-fake" });
+    await deleteItinerary(testDb(), actor, IDS.trip, IT.activity);
+    const [e] = await auditRows();
+    expect(e).toMatchObject({ channel: "mcp_oauth", clientId: "client-fake", requestId: "ray-fake", action: "delete" });
   });
 });
 

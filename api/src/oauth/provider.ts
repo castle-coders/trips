@@ -24,7 +24,7 @@ import {
   type OAuthResourceContext,
 } from "@cloudflare/workers-oauth-provider";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db";
+import { getDb, requestIdFrom } from "../db";
 import { users } from "../db/schema";
 import { createTripsMcpHandler } from "../mcp/handler";
 import { oauthDefaultApp } from "./default-handler";
@@ -127,7 +127,7 @@ const apiHandler = {
         userId,
         channel: "mcp_oauth",
         clientId: c.auth.clientId ?? null,
-        requestId: request.headers.get("cf-ray"),
+        requestId: requestIdFrom(request.headers.get("cf-ray")),
       },
     };
     return createTripsMcpHandler(env, ctx).fetch(request, { authInfo });

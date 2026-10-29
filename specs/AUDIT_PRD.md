@@ -154,7 +154,7 @@ Table `audit_events`, append-only. No REST endpoint, service function or admin t
 | `action` | text | `create`, `update`, `delete`, `accept`, `merge`, `link`, `unlink`, `set_primary`, `revoke`. |
 | `before` | text (JSON), nullable | Full snapshot before the change. Null for create. |
 | `after` | text (JSON), nullable | Full snapshot after the change. Null for delete. |
-| `changes` | text (JSON), nullable | For update: `{ "<path>": { "from": ..., "to": ... } }`. Null for create and delete, where the snapshot is the record. |
+| `changes` | text (JSON), nullable | For update: `{ "<path>": { "from": ..., "to": ... } }`. Null for create and delete, where the snapshot is the record. For accept, merge and set_primary it is the diff of the two snapshots when both are present (amended at Phase 1). |
 | `metadata` | text (JSON), nullable | Action-specific extras: child counts on trip delete, merged user id on merge, scopes on grant revoke. |
 
 Indexes: `(tripId, seq)`, `(entityType, entityId, seq)`, `(actorUserId, seq)`, `(seq)`.

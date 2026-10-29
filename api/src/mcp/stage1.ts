@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AuthInfo } from "@modelcontextprotocol/server";
-import type { Env } from "../db";
+import { requestIdFrom, type Env } from "../db";
 import { authMiddleware } from "../middleware/auth";
 import { mcpRateLimit } from "../middleware/rateLimit";
 import { createTripsMcpHandler } from "./handler";
@@ -18,7 +18,7 @@ stage1.all("/mcp", authMiddleware, mcpRateLimit, async (c) => {
       userId: user.id,
       channel: "mcp_stage1",
       clientId: user.clientId,
-      requestId: c.req.header("cf-ray") ?? null,
+      requestId: requestIdFrom(c.req.header("cf-ray")),
     },
   };
   return createTripsMcpHandler(c.env, c.executionCtx).fetch(c.req.raw, { authInfo });

@@ -3,12 +3,25 @@ import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
 import { mergeAccounts } from "../lib/merge";
+import { recordEvent } from "../services/audit";
+import {
+  createServiceIdentity,
+  createUser,
+  deleteServiceIdentity,
+  deleteUser,
+  getUser,
+  updateUser,
+  type User,
+} from "../services/users";
 import {
   OAUTH_NOT_CONFIGURED,
   OAuthNotConfiguredError,
   StaticClientError,
+  type CreatedStaticClient,
   createStaticClient,
   deleteClient,
+  getClient,
+  getGrant,
   isOAuthConfigured,
   listAllGrants,
   listClients,
@@ -30,6 +43,16 @@ const UserSchema = z
     updatedAt: z.string(),
   })
   .openapi("User");
+
+/** The public user shape: never passwordHash, googleId or avatarUrl. */
+const toUserView = (u: User) => ({
+  id: u.id,
+  email: u.email,
+  name: u.name,
+  role: u.role,
+  createdAt: u.createdAt,
+  updatedAt: u.updatedAt,
+});
 
 // List users
 app.openapi(
@@ -90,47 +113,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const body = c.req.valid("json");
-
-    const existing = await db
-      .select()
-      .from(userEmails)
-      .where(eq(userEmails.email, body.email))
-      .limit(1);
-    if (existing.length)
-      return c.json({ error: "Email already exists" }, 409);
-
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-
-    await db.insert(users).values({
-      id,
-      email: body.email,
-      name: body.name,
-      role: body.role,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(userEmails).values({
-      id: crypto.randomUUID(),
-      userId: id,
-      email: body.email,
-      isPrimary: true,
-      createdAt: now,
-    });
-
-    return c.json(
-      {
-        id,
-        email: body.email,
-        name: body.name,
-        role: body.role,
-        createdAt: now,
-        updatedAt: now,
-      },
-      201
-    );
+    const created = await createUser(getDb(c.env.DB), c.get("user"), body);
+    return c.json(toUserView(created), 201);
   }
 );
 
@@ -164,37 +149,10 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { userId } = c.req.valid("param");
     const body = c.req.valid("json");
-
-    const existing = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!existing.length) return c.json({ error: "User not found" }, 404);
-
-    const now = new Date().toISOString();
-    await db
-      .update(users)
-      .set({ ...body, updatedAt: now })
-      .where(eq(users.id, userId));
-
-    const updated = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        name: users.name,
-        role: users.role,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    return c.json(updated[0], 200);
+    const updated = await updateUser(getDb(c.env.DB), c.get("user"), userId, body);
+    return c.json(toUserView(updated), 200);
   }
 );
 
@@ -216,17 +174,12 @@ app.openapi(
     const db = getDb(c.env.DB);
     const { userId } = c.req.valid("param");
 
-    const existing = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    if (!existing.length) return c.json({ error: "User not found" }, 404);
+    await getUser(db, userId); // 404 before anything is revoked
 
     // Revoke OAuth grants first: once the row is gone they are invisible to /admin/grants.
     // A throw here aborts the request (onError -> 500) with the user and grants intact.
-    await revokeAllGrantsForUser(c.env, userId);
-    await db.delete(users).where(eq(users.id, userId));
+    const revokedGrants = await revokeAllGrantsForUser(c.env, userId);
+    await deleteUser(db, c.get("user"), userId, { revokedGrants });
     return c.body(null, 204);
   }
 );
@@ -287,11 +240,8 @@ app.openapi(
     ]);
     if (keepExists.length && mergeExists.length) await revokeAllGrantsForUser(c.env, mergeUserId);
 
-    try {
-      await mergeAccounts(db, keepUserId, mergeUserId);
-    } catch (err: any) {
-      return c.json({ error: err.message }, 404);
-    }
+    // A missing user is ServiceError("not_found") -> 404 { error } through onError.
+    await mergeAccounts(db, c.get("user"), keepUserId, mergeUserId);
 
     const [userRows, emailRows] = await Promise.all([
       db
@@ -394,48 +344,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const body = c.req.valid("json");
-
-    // Verify user exists
-    const user = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, body.userId))
-      .limit(1);
-    if (!user.length) return c.json({ error: "User not found" }, 404);
-
-    // Check for duplicate subject
-    const existing = await db
-      .select()
-      .from(serviceIdentities)
-      .where(eq(serviceIdentities.cfAccessSubject, body.cfAccessSubject))
-      .limit(1);
-    if (existing.length)
-      return c.json({ error: "Subject already mapped" }, 409);
-
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-    await db.insert(serviceIdentities).values({
-      id,
-      cfAccessSubject: body.cfAccessSubject,
-      commonName: body.commonName,
-      userId: body.userId,
-      createdAt: now,
-    });
-
-    return c.json(
-      {
-        id,
-        cfAccessSubject: body.cfAccessSubject,
-        commonName: body.commonName,
-        userId: body.userId,
-        userName: user[0].name,
-        userEmail: user[0].email,
-        createdAt: now,
-      },
-      201
-    );
+    const created = await createServiceIdentity(getDb(c.env.DB), c.get("user"), body);
+    return c.json(created, 201);
   }
 );
 
@@ -454,19 +365,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { identityId } = c.req.valid("param");
-
-    const existing = await db
-      .select()
-      .from(serviceIdentities)
-      .where(eq(serviceIdentities.id, identityId))
-      .limit(1);
-    if (!existing.length) return c.json({ error: "Not found" }, 404);
-
-    await db
-      .delete(serviceIdentities)
-      .where(eq(serviceIdentities.id, identityId));
+    await deleteServiceIdentity(getDb(c.env.DB), c.get("user"), identityId);
     return c.body(null, 204);
   }
 );
@@ -475,6 +375,11 @@ app.openapi(
 //
 // Stage 2 off (MCP_PUBLIC_URL empty): list routes return [], mutating routes return
 // 503 { error: "OAuth is not configured" }.
+//
+// Audit (AUDIT_TDD 7.4): these entities live in KV, so the event cannot share a D1 batch. Each
+// mutating handler reads the view first, then calls `recordEvent` only after the KV write
+// succeeded. A 404 or 503 records nothing. Snapshots and metadata are built by hand from the
+// views, which never carry a secret, its hash or a token hash.
 
 /** Grant, user and client ids from the library and D1 use only these characters (no ":" or "/"). */
 const OAuthIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
@@ -547,8 +452,26 @@ app.openapi(
   async (c) => {
     if (!isOAuthConfigured(c.env)) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
     const { userId, grantId } = c.req.valid("param");
+    const grant = await getGrant(c.env, userId, grantId);
+    if (!grant) return c.json({ error: "Not found" }, 404);
     const revoked = await revokeGrant(c.env, userId, grantId);
     if (!revoked) return c.json({ error: "Not found" }, 404);
+    await recordEvent(getDb(c.env.DB), {
+      actor: c.get("user"),
+      tripId: null,
+      entityType: "oauth_grant",
+      entityId: grantId,
+      action: "revoke",
+      before: {
+        grantId: grant.id,
+        userId,
+        clientId: grant.clientId,
+        clientName: grant.clientName,
+        scopes: grant.scopes,
+        createdAt: grant.createdAt,
+      },
+      metadata: { scopes: grant.scopes, clientId: grant.clientId, selfService: false },
+    });
     return c.body(null, 204);
   }
 );
@@ -607,15 +530,30 @@ app.openapi(
   async (c) => {
     if (!isOAuthConfigured(c.env)) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
     const body = c.req.valid("json");
+    let created: CreatedStaticClient;
     try {
-      const created = await createStaticClient(c.env, body);
-      c.header("Cache-Control", "no-store");
-      return c.json(created, 201);
+      created = await createStaticClient(c.env, body);
     } catch (err) {
       if (err instanceof StaticClientError) return c.json({ error: err.message }, 400);
       if (err instanceof OAuthNotConfiguredError) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
       throw err;
     }
+    // Built field by field: `created` carries the one-time secret, which must never reach a row.
+    await recordEvent(getDb(c.env.DB), {
+      actor: c.get("user"),
+      tripId: null,
+      entityType: "oauth_client",
+      entityId: created.clientId,
+      action: "create",
+      after: {
+        clientId: created.clientId,
+        clientName: created.clientName,
+        redirectUris: created.redirectUris,
+        tokenEndpointAuthMethod: created.tokenEndpointAuthMethod,
+      },
+    });
+    c.header("Cache-Control", "no-store");
+    return c.json(created, 201);
   }
 );
 
@@ -638,8 +576,24 @@ app.openapi(
   async (c) => {
     if (!isOAuthConfigured(c.env)) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
     const { clientId } = c.req.valid("param");
+    const client = await getClient(c.env, clientId);
+    if (!client) return c.json({ error: "Not found" }, 404);
     const deleted = await deleteClient(c.env, clientId);
     if (!deleted) return c.json({ error: "Not found" }, 404);
+    // One event for the client; the grants the library revokes underneath get none (cascade).
+    await recordEvent(getDb(c.env.DB), {
+      actor: c.get("user"),
+      tripId: null,
+      entityType: "oauth_client",
+      entityId: clientId,
+      action: "delete",
+      before: {
+        clientId: client.clientId,
+        clientName: client.clientName,
+        redirectUris: client.redirectUris,
+        tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+      },
+    });
     return c.body(null, 204);
   }
 );

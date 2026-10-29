@@ -24,7 +24,10 @@ export interface McpRequestContext {
 
 const CHANNELS: ReadonlySet<string> = new Set<Channel>(["web", "service_token", "mcp_stage1", "mcp_oauth", "dev"]);
 
-/** Only the two MCP entry points build authInfo.extra, so a missing channel means Stage 2. */
+/**
+ * Only the two MCP entry points build authInfo.extra, so a missing channel means Stage 2.
+ * Kept lenient on purpose: direct-handler tests pass only userId. Reviewer finding phase-1 #1 (low).
+ */
 function readChannel(value: unknown): Channel {
   if (value === undefined || value === null) return "mcp_oauth";
   if (typeof value === "string" && CHANNELS.has(value)) return value as Channel;

@@ -2,9 +2,10 @@ import { createMiddleware } from "hono/factory";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getCookie } from "hono/cookie";
 import { eq } from "drizzle-orm";
-import type { Env, Actor, AuthUser, CfIdentity } from "../db";
-import { getDb } from "../db";
+import type { Env, Actor, AuthUser, CfIdentity, Channel } from "../db";
+import { getDb, requestIdFrom } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
+import { insertUserWithPrimaryEmail } from "../services/users";
 
 export { findUserByEmail, createUserWithEmail };
 
@@ -38,12 +39,17 @@ async function findUserByEmail(
   return rows.length ? rows[0] : null;
 }
 
-/** Create a new user and their primary email entry */
+/**
+ * Create a new user and their primary email entry. Records `user.create` with the new user as
+ * its own actor (AUDIT_TDD 7.2): `audit.channel` is the session's channel when the caller knows
+ * it (default "web"), `audit.requestId` the cf-ray when present.
+ */
 async function createUserWithEmail(
   db: ReturnType<typeof getDb>,
   email: string,
   name: string,
-  bootstrapAdminEmail?: string
+  bootstrapAdminEmail?: string,
+  audit: { channel?: Channel; requestId?: string | null } = {}
 ): Promise<AuthUser> {
   const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
   const anyUser = await db.select({ id: users.id }).from(users).limit(1);
@@ -51,14 +57,16 @@ async function createUserWithEmail(
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
-  await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
-  await db.insert(userEmails).values({
-    id: crypto.randomUUID(),
-    userId: id,
+  const actor: Actor = {
+    id,
     email,
-    isPrimary: true,
-    createdAt: now,
-  });
+    name,
+    role,
+    channel: audit.channel ?? "web",
+    clientId: null,
+    requestId: audit.requestId ?? null,
+  };
+  await insertUserWithPrimaryEmail(db, actor, { id, email, name, role, now });
 
   return { id, email, name, role };
 }
@@ -131,7 +139,7 @@ async function authenticateDevUser(
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
   const path = c.req.path;
-  const requestId = c.req.header("cf-ray") ?? null;
+  const requestId = requestIdFrom(c.req.header("cf-ray"));
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
@@ -176,7 +184,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
   const path = c.req.path;
   const isInviteFlow = path.includes("/invite/");
   const isLinkFlow = path.includes("/link");
-  const requestId = c.req.header("cf-ray") ?? null;
+  const requestId = requestIdFrom(c.req.header("cf-ray"));
   console.log(`[jwt-only] path=${path} invite=${isInviteFlow} link=${isLinkFlow}`);
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");

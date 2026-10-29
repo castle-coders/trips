@@ -45,7 +45,7 @@ Gate 0: tests green; migration `0011_audit_events.sql` contains only `CREATE TAB
 
 Lines 2, 3 and 4 are serialized because all three touch `api/src/routes/auth.ts` and `api/src/routes/admin.ts`.
 
-Gate 1: tests green with exactly the one announced behavior change (no-op `PUT` no longer bumps `updatedAt`); OpenAPI document unchanged; every write route and service function is named in the reviewer's event inventory with exactly one event; the atomicity and secrets tests pass; `git grep -n "recordEvent(" api/src` shows only the three KV-backed OAuth call sites; reviewer says go. Commit.
+Gate 1: tests green with exactly the one announced behavior change (no-op `PUT` no longer bumps `updatedAt`); OpenAPI document unchanged; every write route and service function is named in the reviewer's event inventory with exactly one event; the atomicity and secrets tests pass; `git grep -n "recordEvent(" api/src` shows only the four KV-backed OAuth call sites (admin grant revoke, self grant revoke, client create, client delete); reviewer says go. Commit.
 
 ### Phase 2: Read API
 1. `audit-api-builder`

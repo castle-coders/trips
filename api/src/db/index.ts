@@ -19,6 +19,17 @@ export interface Actor extends AuthUser {
   requestId: string | null;
 }
 
+/**
+ * The `cf-ray` header as a request id, or null. Cloudflare sets the header at the edge, but
+ * nothing guarantees that for direct or dev requests, so the value is bounded and charset-checked
+ * before it is stored in audit_events (AUDIT_TDD 4.3).
+ */
+export function requestIdFrom(header: string | null | undefined): string | null {
+  if (!header) return null;
+  const v = header.trim();
+  return v.length > 0 && v.length <= 64 && /^[A-Za-z0-9._-]+$/.test(v) ? v : null;
+}
+
 export interface CfIdentity {
   email: string;
   name: string;

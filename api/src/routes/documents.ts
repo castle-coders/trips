@@ -1,13 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { documents, trips, participants } from "../db/schema";
-import { ServiceError } from "../services/errors";
-import {
-  DocumentSchema,
-  CreateDocumentSchema,
-  UpdateDocumentSchema,
-} from "../schemas/document";
+import { DocumentSchema, CreateDocumentSchema, UpdateDocumentSchema } from "../schemas/document";
+import { createDocument, deleteDocument, listDocuments, updateDocument } from "../services/documents";
 
 const app = new OpenAPIHono<Env>();
 
@@ -31,21 +25,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const user = c.get("user");
-    if (user.role !== "admin") {
-      const membership = await db
-        .select({ id: participants.id })
-        .from(participants)
-        .where(and(eq(participants.tripId, tripId), eq(participants.userId, user.id)))
-        .limit(1);
-      if (!membership.length) throw new ServiceError("not_found", "Trip not found");
-    }
-    const result = await db
-      .select()
-      .from(documents)
-      .where(eq(documents.tripId, tripId));
+    const result = await listDocuments(getDb(c.env.DB), c.get("user"), tripId);
     return c.json(result as any, 200);
   }
 );
@@ -70,23 +51,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const trip = await db.select().from(trips).where(eq(trips.id, tripId));
-    if (!trip.length) return c.json({ error: "Trip not found" }, 404);
-    const body = c.req.valid("json");
-    const now = new Date().toISOString();
-    const row = {
-      id: crypto.randomUUID(),
-      tripId,
-      reservationId: body.reservationId ?? null,
-      fileUrl: body.fileUrl,
-      documentType: body.documentType,
-      name: body.name,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.insert(documents).values(row);
+    const row = await createDocument(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("json"));
     return c.json(row, 201);
   }
 );
@@ -111,24 +77,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, documentId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(documents)
-      .where(
-        and(eq(documents.id, documentId), eq(documents.tripId, tripId))
-      );
-    if (!existing.length) return c.json({ error: "Document not found" }, 404);
-    const updated = {
-      ...existing[0],
-      ...c.req.valid("json"),
-      updatedAt: new Date().toISOString(),
-    };
-    await db
-      .update(documents)
-      .set(updated)
-      .where(eq(documents.id, documentId));
+    const updated = await updateDocument(getDb(c.env.DB), c.get("user"), tripId, documentId, c.req.valid("json"));
     return c.json(updated, 200);
   }
 );
@@ -145,16 +95,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, documentId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(documents)
-      .where(
-        and(eq(documents.id, documentId), eq(documents.tripId, tripId))
-      );
-    if (!existing.length) return c.json({ error: "Document not found" }, 404);
-    await db.delete(documents).where(eq(documents.id, documentId));
+    await deleteDocument(getDb(c.env.DB), c.get("user"), tripId, documentId);
     return c.body(null, 204);
   }
 );
