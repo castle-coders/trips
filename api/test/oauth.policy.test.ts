@@ -309,6 +309,13 @@ describe("discovery", () => {
     expect(meta.resource_name).toBe("Trips");
   });
 
+  it("advertises trips:read and trips:write in the challenge and resource metadata, so clients ask for write", async () => {
+    const res = await send(new Request(`${MCP_ORIGIN}/mcp`, { method: "POST", headers: MCP_RPC_HEADERS, body: "{}" }));
+    expect(res.headers.get("WWW-Authenticate")).toContain('scope="trips:read trips:write"');
+    const meta = (await (await send(new Request(RESOURCE_METADATA))).json()) as any;
+    expect(meta.scopes_supported).toEqual(["trips:read", "trips:write"]);
+  });
+
   it("authorization-server metadata advertises S256 only, the three scopes, code flow and our endpoints", async () => {
     const res = await send(new Request(`${MCP_ORIGIN}/.well-known/oauth-authorization-server`));
     expect(res.status).toBe(200);
