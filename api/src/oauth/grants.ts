@@ -26,6 +26,7 @@
 import { getOAuthApi, type ClientInfo, type GrantSummary, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { getDb } from "../db";
 import { users } from "../db/schema";
+import { isCimdClientId, lookupClientName, type ClientNameCache } from "./client-name";
 import { logField, type Bindings } from "./http";
 import { buildProviderOptions } from "./provider";
 import { isAllowedRedirect } from "./redirects";
@@ -71,26 +72,8 @@ async function allUserGrants(api: OAuthHelpers, userId: string): Promise<GrantSu
   return out;
 }
 
-function isCimdClientId(clientId: string): boolean {
-  return /^https?:\/\//i.test(clientId);
-}
-
-/** Per-request client-name cache, so N grants for one client cost one lookup. */
-type ClientNameCache = Map<string, Promise<string | null>>;
-
-function clientName(api: OAuthHelpers, cache: ClientNameCache, clientId: string): Promise<string | null> {
-  let hit = cache.get(clientId);
-  if (!hit) {
-    hit = isCimdClientId(clientId)
-      ? Promise.resolve(null)
-      : api.lookupClient(clientId).then(
-          (c) => c?.clientName ?? null,
-          () => null,
-        );
-    cache.set(clientId, hit);
-  }
-  return hit;
-}
+/** Per-request client-name cache, so N grants for one client cost one lookup (see client-name.ts). */
+const clientName = lookupClientName;
 
 function isoFromEpochSeconds(seconds: number | undefined): string | null {
   return typeof seconds === "number" && Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null;
@@ -158,6 +141,19 @@ export async function listAllGrants(env: Bindings): Promise<AdminGrantView[]> {
     }),
   );
   return perUser.flat().sort(newestFirst);
+}
+
+/**
+ * One of `userId`'s grants as a view, or `null` when no grant with that id belongs to the user.
+ * Route handlers read this before `revokeGrant` so the audit event (AUDIT_TDD 7.4) can carry
+ * the grant's client, scopes and creation time after the grant itself is gone from KV.
+ * Throws `OAuthNotConfiguredError` when Stage 2 is off.
+ */
+export async function getGrant(env: Bindings, userId: string, grantId: string): Promise<GrantView | null> {
+  const api = helpers(env);
+  const grant = (await allUserGrants(api, userId)).find((g) => g.id === grantId);
+  if (!grant) return null;
+  return toView(api, new Map(), grant);
 }
 
 /**
@@ -283,6 +279,19 @@ export async function listClients(env: Bindings): Promise<ClientView[]> {
     cursor = page.cursor;
   } while (cursor);
   return out.sort((a, b) => a.clientId.localeCompare(b.clientId));
+}
+
+/**
+ * One stored client as a view (never the secret hash), or `null` when none has that id. CIMD
+ * URL ids are never stored, so they return `null` without a network fetch. Route handlers read
+ * this before `deleteClient` so the audit event (AUDIT_TDD 7.4) can carry the client's name and
+ * redirect URIs. Throws `OAuthNotConfiguredError` when Stage 2 is off.
+ */
+export async function getClient(env: Bindings, clientId: string): Promise<ClientView | null> {
+  const api = helpers(env);
+  if (isCimdClientId(clientId)) return null;
+  const existing = await api.lookupClient(clientId);
+  return existing ? toClientView(existing) : null;
 }
 
 /**

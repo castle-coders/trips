@@ -9,6 +9,33 @@ export interface AuthUser {
   role: string;
 }
 
+export type Channel = "web" | "service_token" | "mcp_stage1" | "mcp_oauth" | "dev";
+
+export interface Actor extends AuthUser {
+  channel: Channel;
+  /** OAuth client id (mcp_oauth) or service identity common name (service_token, mcp_stage1). */
+  clientId: string | null;
+  /**
+   * Human-readable client name for the Activity feed's "via" badge: the OAuth client's registered
+   * `client_name` (mcp_oauth; null for CIMD or unknown clients) or the service identity common
+   * name (service_token, mcp_stage1). Null for web and dev.
+   */
+  clientName: string | null;
+  /** Cloudflare cf-ray when present. */
+  requestId: string | null;
+}
+
+/**
+ * The `cf-ray` header as a request id, or null. Cloudflare sets the header at the edge, but
+ * nothing guarantees that for direct or dev requests, so the value is bounded and charset-checked
+ * before it is stored in audit_events (AUDIT_TDD 4.3).
+ */
+export function requestIdFrom(header: string | null | undefined): string | null {
+  if (!header) return null;
+  const v = header.trim();
+  return v.length > 0 && v.length <= 64 && /^[A-Za-z0-9._-]+$/.test(v) ? v : null;
+}
+
 export interface CfIdentity {
   email: string;
   name: string;
@@ -60,7 +87,7 @@ export type Env = {
     ACCESS_CLIENT_SECRET?: string;
   };
   Variables: {
-    user: AuthUser;
+    user: Actor;
     cfIdentity: CfIdentity;
   };
 };

@@ -208,7 +208,7 @@ describe("PUT /trips/:tripId", () => {
     expect(res).toEqual({ status: 403, body: { error: "Forbidden" } });
   });
 
-  it("empty body is accepted and only bumps updatedAt", async () => {
+  it("empty body is accepted and leaves the row unchanged", async () => {
     const { status, body } = await read(await w.as.owner.put(`/api/trips/${IDS.trip}`, {}));
     expect(status).toBe(200);
     expect(normalize(body, w.labels)).toMatchSnapshot();

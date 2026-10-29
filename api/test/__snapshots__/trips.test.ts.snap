@@ -343,7 +343,7 @@ exports[`PUT /trips/:tripId > editor 1`] = `
 }
 `;
 
-exports[`PUT /trips/:tripId > empty body is accepted and only bumps updatedAt 1`] = `
+exports[`PUT /trips/:tripId > empty body is accepted and leaves the row unchanged 1`] = `
 {
   "createdAt": "<timestamp>",
   "description": "Fake trip for parity tests",

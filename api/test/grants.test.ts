@@ -13,6 +13,7 @@ import type { Env } from "../src/db";
 import worker from "../src/index";
 import { buildProviderOptions } from "../src/oauth/provider";
 import { seedUser } from "./helpers";
+import { auditRows, type AuditRow } from "./helpers/audit";
 import { parseRpc, rpcBody } from "./helpers/mcp";
 
 type Bindings = Env["Bindings"];
@@ -82,8 +83,12 @@ interface Connected {
   refreshToken: string;
 }
 
-/** A full authorization for `userId` with a public loopback client: real grant and tokens. */
-async function connectApp(userId: string, clientName: string, scope = ["trips:read"]): Promise<Connected> {
+/**
+ * A full authorization for `userId` with a public loopback client: real grant and tokens.
+ * `ip` sets `cf-connecting-ip` on the token request so a block of tests can use its own
+ * OAUTH_RATE_LIMITER key (30 per minute per IP) instead of sharing the file-wide "unknown" one.
+ */
+async function connectApp(userId: string, clientName: string, scope = ["trips:read"], ip?: string): Promise<Connected> {
   const e = stage2Env();
   const api = getOAuthApi(buildProviderOptions(e), e);
   const before = new Set((await api.listUserGrants(userId)).items.map((g) => g.id));
@@ -109,7 +114,7 @@ async function connectApp(userId: string, clientName: string, scope = ["trips:re
   const tokenRes = await send(
     new Request(`https://${MCP_HOST}/oauth/token`, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: { "content-type": "application/x-www-form-urlencoded", ...(ip ? { "cf-connecting-ip": ip } : {}) },
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code: code!,
@@ -622,5 +627,226 @@ describe("account link hardening: dead keep user and revoke failures", () => {
     const ids = (await db.prepare("SELECT id FROM users").all<{ id: string }>()).results.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([keep.id, gone.id]));
     expect(await kvCount(`grant:${gone.id}:`)).toBe(1);
+  });
+});
+
+// AUDIT_TDD 7.4: grants and clients live in KV, so each mutating handler records its event with
+// `recordEvent` after the KV write succeeds. One event per logical write; 404/503 record nothing;
+// no JSON column ever carries a secret, its hash or a token.
+describe("audit events for OAuth grants and clients", () => {
+  /** Own limiter key (TEST-NET-3): the rest of the file already spends most of the "unknown" budget. */
+  const AUDIT_IP = "203.0.113.42";
+  const GRANT_SNAPSHOT_KEYS = ["clientId", "clientName", "createdAt", "grantId", "scopes", "userId"];
+  const CLIENT_SNAPSHOT_KEYS = ["clientId", "clientName", "redirectUris", "tokenEndpointAuthMethod"];
+
+  /** Every JSON column of every row, serialized, so a secret anywhere in them is caught. */
+  function jsonColumns(rows: AuditRow[]): string {
+    return JSON.stringify(rows.map((r) => [r.before, r.after, r.changes, r.metadata, r.entityLabel]));
+  }
+
+  async function sha256Hex(s: string): Promise<string> {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function expectActor(row: AuditRow, u: { id: string; email: string; role: string }) {
+    expect(row.actorUserId).toBe(u.id);
+    expect(row.actorEmail).toBe(u.email);
+    expect(row.actorRole).toBe(u.role);
+    expect(row.channel).toBe("dev");
+    expect(row.clientId).toBeNull();
+    expect(row.tripId).toBeNull();
+  }
+
+  it("minting a grant through the OAuth flow records nothing (issuance is a non-goal)", async () => {
+    const alice = await seedUser("alice@example.test", "viewer");
+    await connectApp(alice.id, "Alice Tool", ["trips:read"], AUDIT_IP);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("DELETE /admin/grants/{userId}/{grantId} records one oauth_grant.revoke with selfService false", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const alice = await seedUser("alice@example.test", "viewer");
+    const a = await connectApp(alice.id, "Alice Tool", ["trips:read", "offline_access"], AUDIT_IP);
+    const listed = ((await (await asMain(admin.email, "/admin/grants")).json()) as any[]).find((g) => g.id === a.grantId);
+
+    const del = await asMain(admin.email, `/admin/grants/${alice.id}/${a.grantId}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+
+    // The grant is gone from KV, yet the event survives it.
+    expect(await kvCount(`grant:${alice.id}:${a.grantId}`)).toBe(0);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expectActor(row, admin);
+    expect(row).toMatchObject({ entityType: "oauth_grant", entityId: a.grantId, action: "revoke", entityLabel: "Alice Tool" });
+    expect(Object.keys(row.before as object).sort()).toEqual(GRANT_SNAPSHOT_KEYS);
+    expect(row.before).toEqual({
+      grantId: a.grantId,
+      userId: alice.id,
+      clientId: a.clientId,
+      clientName: "Alice Tool",
+      scopes: ["trips:read", "offline_access"],
+      createdAt: listed.createdAt,
+    });
+    expect(row.after).toBeNull();
+    expect(row.changes).toBeNull();
+    expect(row.metadata).toEqual({ scopes: ["trips:read", "offline_access"], clientId: a.clientId, selfService: false });
+
+    const json = jsonColumns(rows);
+    expect(json).not.toContain(a.accessToken);
+    expect(json).not.toContain(a.refreshToken);
+    expect(json).not.toContain(await sha256Hex(a.accessToken));
+    expect(json).not.toContain(await sha256Hex(a.refreshToken));
+  });
+
+  it("DELETE /auth/me/grants/{grantId} records one oauth_grant.revoke with the caller as actor and selfService true", async () => {
+    const alice = await seedUser("alice@example.test", "viewer");
+    const a = await connectApp(alice.id, "Alice Tool", ["trips:read"], AUDIT_IP);
+
+    const del = await asMain(alice.email, `/auth/me/grants/${a.grantId}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+
+    expect(await kvCount(`grant:${alice.id}:${a.grantId}`)).toBe(0);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expectActor(row, alice);
+    expect(row).toMatchObject({ entityType: "oauth_grant", entityId: a.grantId, action: "revoke", entityLabel: "Alice Tool" });
+    expect(Object.keys(row.before as object).sort()).toEqual(GRANT_SNAPSHOT_KEYS);
+    expect(row.before).toMatchObject({ grantId: a.grantId, userId: alice.id, clientId: a.clientId, clientName: "Alice Tool", scopes: ["trips:read"] });
+    expect(new Date((row.before as any).createdAt).toISOString()).toBe((row.before as any).createdAt);
+    expect(row.after).toBeNull();
+    expect(row.metadata).toEqual({ scopes: ["trips:read"], clientId: a.clientId, selfService: true });
+
+    const json = jsonColumns(rows);
+    expect(json).not.toContain(a.accessToken);
+    expect(json).not.toContain(a.refreshToken);
+  });
+
+  it("a revoke that 404s (wrong user, another user's grant, unknown id) records nothing", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const alice = await seedUser("alice@example.test", "viewer");
+    const bob = await seedUser("bob@example.test", "viewer");
+    const b = await connectApp(bob.id, "Bob Tool", ["trips:read"], AUDIT_IP);
+
+    expect((await asMain(admin.email, `/admin/grants/${admin.id}/${b.grantId}`, { method: "DELETE" })).status).toBe(404);
+    expect((await asMain(admin.email, `/admin/grants/${bob.id}/doesnotexist`, { method: "DELETE" })).status).toBe(404);
+    expect((await asMain(alice.email, `/auth/me/grants/${b.grantId}`, { method: "DELETE" })).status).toBe(404);
+    expect((await asMain(alice.email, "/auth/me/grants/doesnotexist", { method: "DELETE" })).status).toBe(404);
+    expect(await auditRows()).toEqual([]);
+    expect(await kvCount(`grant:${bob.id}:${b.grantId}`)).toBe(1);
+  });
+
+  it("POST /admin/oauth-clients records one oauth_client.create without the secret or its hash", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const res = await asMain(admin.email, "/admin/oauth-clients", {
+      method: "POST",
+      body: JSON.stringify({ clientName: "Gemini Spark", redirectUris: [LOOPBACK_REDIRECT], tokenEndpointAuthMethod: "client_secret_post" }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as any;
+
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expectActor(row, admin);
+    expect(row).toMatchObject({ entityType: "oauth_client", entityId: created.clientId, action: "create", entityLabel: "Gemini Spark" });
+    expect(row.before).toBeNull();
+    expect(row.changes).toBeNull();
+    expect(row.metadata).toBeNull();
+    expect(Object.keys(row.after as object).sort()).toEqual(CLIENT_SNAPSHOT_KEYS);
+    expect(row.after).toEqual({
+      clientId: created.clientId,
+      clientName: "Gemini Spark",
+      redirectUris: [LOOPBACK_REDIRECT],
+      tokenEndpointAuthMethod: "client_secret_post",
+    });
+
+    const json = jsonColumns(rows);
+    expect(json).not.toContain(created.clientSecret);
+    expect(json).not.toContain(await sha256Hex(created.clientSecret));
+  });
+
+  it("a rejected client create (400) records nothing", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const bad = await asMain(admin.email, "/admin/oauth-clients", {
+      method: "POST",
+      body: JSON.stringify({ clientName: "X", redirectUris: ["https://evil.example.test/cb"] }),
+    });
+    expect(bad.status).toBe(400);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it("DELETE /admin/oauth-clients/{clientId} records one oauth_client.delete and no event for the grants it cascades", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const alice = await seedUser("alice@example.test", "viewer");
+    const bob = await seedUser("bob@example.test", "viewer");
+    const created = (await (
+      await asMain(admin.email, "/admin/oauth-clients", {
+        method: "POST",
+        body: JSON.stringify({ clientName: "Static", redirectUris: [LOOPBACK_REDIRECT] }),
+      })
+    ).json()) as any;
+    // A DCR client with two live grants: deleting it revokes both, but only the client gets an event.
+    const a = await connectApp(alice.id, "Shared Tool", ["trips:read"], AUDIT_IP);
+    const e = stage2Env();
+    const api = getOAuthApi(buildProviderOptions(e), e);
+    const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", crypto.getRandomValues(new Uint8Array(32)))));
+    const q = new URLSearchParams({
+      response_type: "code",
+      client_id: a.clientId,
+      redirect_uri: LOOPBACK_REDIRECT,
+      scope: "trips:read",
+      state: "s",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      resource: MCP_PUBLIC_URL,
+    });
+    const authRequest = await api.parseAuthRequest(new Request(`https://${MCP_HOST}/authorize?${q}`));
+    // The code is never exchanged; the grant exists in KV as soon as authorization completes.
+    await api.completeAuthorization({ request: authRequest, userId: bob.id, metadata: {}, scope: ["trips:read"], props: { userId: bob.id } });
+    expect(await kvCount(`grant:${bob.id}:`)).toBe(1);
+
+    expect((await asMain(admin.email, "/admin/oauth-clients/nosuchclient", { method: "DELETE" })).status).toBe(404);
+    expect(await auditRows()).toHaveLength(1); // only the create above
+
+    const del = await asMain(admin.email, `/admin/oauth-clients/${a.clientId}`, { method: "DELETE" });
+    expect(del.status).toBe(204);
+    expect(await kvCount(`client:${a.clientId}`)).toBe(0);
+    expect(await kvCount(`grant:${alice.id}:`)).toBe(0);
+    expect(await kvCount(`grant:${bob.id}:`)).toBe(0);
+
+    const rows = await auditRows();
+    expect(rows).toHaveLength(2);
+    const row = rows[1];
+    expectActor(row, admin);
+    expect(row).toMatchObject({ entityType: "oauth_client", entityId: a.clientId, action: "delete", entityLabel: "Shared Tool" });
+    expect(Object.keys(row.before as object).sort()).toEqual(CLIENT_SNAPSHOT_KEYS);
+    expect(row.before).toEqual({ clientId: a.clientId, clientName: "Shared Tool", redirectUris: [LOOPBACK_REDIRECT], tokenEndpointAuthMethod: "none" });
+    expect(row.after).toBeNull();
+    expect(row.metadata).toBeNull();
+    expect(rows.filter((r) => r.entityType === "oauth_grant")).toEqual([]);
+
+    const json = jsonColumns(rows);
+    expect(json).not.toContain(a.accessToken);
+    expect(json).not.toContain(a.refreshToken);
+    expect(json).not.toContain(created.clientSecret);
+    expect(json).not.toContain(await sha256Hex(created.clientSecret));
+  });
+
+  it("Stage 2 off: the 503 paths record nothing", async () => {
+    const admin = await seedUser("admin@example.test", "admin");
+    const off = stage2OffEnv();
+    const mutations: [string, RequestInit][] = [
+      ["/auth/me/grants/abc", { method: "DELETE" }],
+      [`/admin/grants/${admin.id}/abc`, { method: "DELETE" }],
+      ["/admin/oauth-clients/abc", { method: "DELETE" }],
+      ["/admin/oauth-clients", { method: "POST", body: JSON.stringify({ clientName: "X", redirectUris: [LOOPBACK_REDIRECT] }) }],
+    ];
+    for (const [path, init] of mutations) {
+      expect((await asMain(admin.email, path, init, off)).status, path).toBe(503);
+    }
+    expect(await auditRows()).toEqual([]);
   });
 });

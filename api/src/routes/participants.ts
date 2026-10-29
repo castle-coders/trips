@@ -1,13 +1,16 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { participants, trips } from "../db/schema";
-import { getTripRole } from "../middleware/tripRole";
 import {
   ParticipantSchema,
   CreateParticipantSchema,
   UpdateParticipantSchema,
 } from "../schemas/participant";
+import {
+  createParticipant,
+  deleteParticipant,
+  listParticipants,
+  updateParticipant,
+} from "../services/participants";
 
 const app = new OpenAPIHono<Env>();
 
@@ -34,12 +37,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const result = await db
-      .select()
-      .from(participants)
-      .where(eq(participants.tripId, tripId));
+    const result = await listParticipants(getDb(c.env.DB), c.get("user"), tripId);
     return c.json(result as any, 200);
   }
 );
@@ -66,32 +65,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const user = c.get("user");
     const { tripId } = c.req.valid("param");
-
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    if (role !== "Owner") {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    const trip = await db.select().from(trips).where(eq(trips.id, tripId));
-    if (!trip.length) return c.json({ error: "Trip not found" }, 404);
-    const body = c.req.valid("json");
-    const now = new Date().toISOString();
-    const row = {
-      id: crypto.randomUUID(),
-      tripId,
-      userId: body.userId ?? null,
-      email: body.email ?? null,
-      name: body.name,
-      role: body.role,
-      traveling: body.traveling ?? false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.insert(participants).values(row);
-    return c.json(row, 201);
+    const row = await createParticipant(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("json"));
+    return c.json(row as any, 201);
   }
 );
 
@@ -117,35 +93,15 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const user = c.get("user");
     const { tripId, participantId } = c.req.valid("param");
-
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    if (role !== "Owner") {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-    const existing = await db
-      .select()
-      .from(participants)
-      .where(
-        and(
-          eq(participants.id, participantId),
-          eq(participants.tripId, tripId)
-        )
-      );
-    if (!existing.length)
-      return c.json({ error: "Participant not found" }, 404);
-    const updated = {
-      ...existing[0],
-      ...c.req.valid("json"),
-      updatedAt: new Date().toISOString(),
-    };
-    await db
-      .update(participants)
-      .set(updated)
-      .where(eq(participants.id, participantId));
-    return c.json(updated, 200);
+    const updated = await updateParticipant(
+      getDb(c.env.DB),
+      c.get("user"),
+      tripId,
+      participantId,
+      c.req.valid("json")
+    );
+    return c.json(updated as any, 200);
   }
 );
 
@@ -163,26 +119,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const user = c.get("user");
     const { tripId, participantId } = c.req.valid("param");
-
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    if (role !== "Owner") {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-    const existing = await db
-      .select()
-      .from(participants)
-      .where(
-        and(
-          eq(participants.id, participantId),
-          eq(participants.tripId, tripId)
-        )
-      );
-    if (!existing.length)
-      return c.json({ error: "Participant not found" }, 404);
-    await db.delete(participants).where(eq(participants.id, participantId));
+    await deleteParticipant(getDb(c.env.DB), c.get("user"), tripId, participantId);
     return c.body(null, 204);
   }
 );

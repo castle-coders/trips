@@ -1,10 +1,13 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
-import { getDb, type Env } from "../db";
-import { users, userEmails, accountLinkTokens, invites, participants, trips } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { getDb, requestIdFrom, type Actor, type Env } from "../db";
+import { users, userEmails, accountLinkTokens, invites, trips } from "../db/schema";
 import { authMiddleware, jwtOnlyMiddleware, findUserByEmail, createUserWithEmail } from "../middleware/auth";
+import { acceptInvite } from "../services/invites";
 import { mergeAccountsD1 } from "../lib/merge";
-import { OAUTH_NOT_CONFIGURED, isOAuthConfigured, listGrantsForUser, revokeAllGrantsForUser, revokeGrant } from "../oauth/grants";
+import { recordEvent } from "../services/audit";
+import { listUserEmails, setPrimaryEmail, unlinkEmail, updateProfile } from "../services/users";
+import { OAUTH_NOT_CONFIGURED, getGrant, isOAuthConfigured, listGrantsForUser, revokeAllGrantsForUser, revokeGrant } from "../oauth/grants";
 
 const app = new OpenAPIHono<Env>();
 
@@ -174,49 +177,20 @@ app.openapi(
     if (new Date(invite.expiresAt) < new Date())
       return c.json({ error: "Invite has expired" }, 404);
 
-    // Resolve or create user
+    // Channel mirrors the session when jwtOnlyMiddleware resolved one (dev vs web); new users default to web.
+    const session = c.get("user") as Actor | undefined;
+    const audit = { channel: session?.channel ?? "web", requestId: requestIdFrom(c.req.header("cf-ray")) } as const;
+
+    // Resolve or create user (user.create rides the same channel and request id as the accept events)
     let authUser = await findUserByEmail(db, identity.email);
     if (!authUser) {
-      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL, audit);
     }
 
-    // Add as participant if not already (check all linked emails)
-    const [existingPart, userEmailRows] = await Promise.all([
-      db.select().from(participants).where(eq(participants.tripId, invite.tripId)),
-      db.select({ email: userEmails.email }).from(userEmails).where(eq(userEmails.userId, authUser.id)),
-    ]);
-    const userEmailSet = new Set(userEmailRows.map((e) => e.email));
-    const alreadyIn = existingPart.find(
-      (p) => p.userId === authUser.id || (p.email && userEmailSet.has(p.email))
-    );
-
-    // If the invite has a name, prefer it over the auto-derived name from the email.
-    const resolvedName = invite.name || authUser.name;
-    if (invite.name && invite.name !== authUser.name) {
-      await db
-        .update(users)
-        .set({ name: resolvedName, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, authUser.id));
-    }
-
-    if (!alreadyIn) {
-      const now = new Date().toISOString();
-      await db.insert(participants).values({
-        id: crypto.randomUUID(),
-        tripId: invite.tripId,
-        userId: authUser.id,
-        email: authUser.email,
-        name: resolvedName,
-        role: invite.role,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    await db
-      .update(invites)
-      .set({ status: "accepted" })
-      .where(eq(invites.id, invite.id));
+    // Every write the acceptance causes (name update, participant, invite status) and its audit
+    // events run in one batch in the service, with the accepting user as actor.
+    const actor: Actor = { ...authUser, clientId: null, clientName: null, ...audit };
+    const { resolvedName } = await acceptInvite(db, actor, invite);
 
     // Return HTML redirect for browser form submissions, JSON for API calls
     const accept = c.req.header("Accept") || "";
@@ -353,21 +327,11 @@ app.openapi(
   async (c) => {
     const authUser = c.get("user");
     const db = getDb(c.env.DB);
-    const { name } = c.req.valid("json");
+    const body = c.req.valid("json");
 
-    await db
-      .update(users)
-      .set({ name, updatedAt: new Date().toISOString() })
-      .where(eq(users.id, authUser.id));
-
-    const [userRows, emailRows] = await Promise.all([
-      db.select().from(users).where(eq(users.id, authUser.id)).limit(1),
-      db
-        .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
-        .from(userEmails)
-        .where(eq(userEmails.userId, authUser.id)),
-    ]);
-    const u = userRows[0];
+    // user.update in the service; an unchanged name writes nothing (TDD 12).
+    const u = await updateProfile(db, authUser, body);
+    const emailRows = (await listUserEmails(db, authUser.id)).map((e) => ({ id: e.id, email: e.email, isPrimary: e.isPrimary }));
     return c.json(
       {
         id: u.id,
@@ -558,7 +522,7 @@ app.openapi(
         // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
         // in the catch below (500) before any D1 change. The keep user must re-consent.
         await revokeAllGrantsForUser(c.env, authUser.id);
-        await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+        await mergeAccountsD1(db, authUser, keepUserId, authUser.id, { promoteRole: false });
         console.log("[link] Merge complete");
       } else {
         console.log("[link] Same user, no merge needed");
@@ -616,28 +580,10 @@ app.openapi(
     const db = getDb(c.env.DB);
     const { emailId } = c.req.valid("param");
 
-    const emailRows = await db
-      .select()
-      .from(userEmails)
-      .where(and(eq(userEmails.id, emailId), eq(userEmails.userId, authUser.id)));
+    // 404 / 400 come from ServiceError through onError, same messages as before.
+    await unlinkEmail(db, authUser, emailId);
 
-    if (!emailRows.length) return c.json({ error: "Email not found" }, 404);
-
-    const emailRow = emailRows[0];
-    if (emailRow.isPrimary) return c.json({ error: "Cannot remove primary email" }, 400);
-
-    const allEmails = await db
-      .select()
-      .from(userEmails)
-      .where(eq(userEmails.userId, authUser.id));
-    if (allEmails.length <= 1) return c.json({ error: "Cannot remove only email" }, 400);
-
-    await db.delete(userEmails).where(eq(userEmails.id, emailId));
-
-    const remaining = await db
-      .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
-      .from(userEmails)
-      .where(eq(userEmails.userId, authUser.id));
+    const remaining = (await listUserEmails(db, authUser.id)).map((e) => ({ id: e.id, email: e.email, isPrimary: e.isPrimary }));
     return c.json(remaining, 200);
   }
 );
@@ -666,24 +612,10 @@ app.openapi(
     const db = getDb(c.env.DB);
     const { emailId } = c.req.valid("param");
 
-    const emailRows = await db
-      .select()
-      .from(userEmails)
-      .where(and(eq(userEmails.id, emailId), eq(userEmails.userId, authUser.id)));
+    // The three data statements and user_email.set_primary run in one batch in the service.
+    await setPrimaryEmail(db, authUser, emailId);
 
-    if (!emailRows.length) return c.json({ error: "Email not found" }, 404);
-
-    // D1 doesn't support BEGIN/COMMIT — use batch() for atomicity
-    await db.batch([
-      db.update(userEmails).set({ isPrimary: false }).where(eq(userEmails.userId, authUser.id)),
-      db.update(userEmails).set({ isPrimary: true }).where(eq(userEmails.id, emailId)),
-      db.update(users).set({ email: emailRows[0].email, updatedAt: new Date().toISOString() }).where(eq(users.id, authUser.id)),
-    ]);
-
-    const updated = await db
-      .select({ id: userEmails.id, email: userEmails.email, isPrimary: userEmails.isPrimary })
-      .from(userEmails)
-      .where(eq(userEmails.userId, authUser.id));
+    const updated = (await listUserEmails(db, authUser.id)).map((e) => ({ id: e.id, email: e.email, isPrimary: e.isPrimary }));
     return c.json(updated, 200);
   }
 );
@@ -742,10 +674,30 @@ app.openapi(
     if (!isOAuthConfigured(c.env)) return c.json({ error: OAUTH_NOT_CONFIGURED }, 503);
     const authUser = c.get("user");
     const { grantId } = c.req.valid("param");
-    // Membership is checked inside revokeGrant against listUserGrants(caller); another user's
-    // grant id is indistinguishable from a missing one.
+    // Membership is checked against listUserGrants(caller) in getGrant and again inside
+    // revokeGrant; another user's grant id is indistinguishable from a missing one.
+    const grant = await getGrant(c.env, authUser.id, grantId);
+    if (!grant) return c.json({ error: "Grant not found" }, 404);
     const revoked = await revokeGrant(c.env, authUser.id, grantId);
     if (!revoked) return c.json({ error: "Grant not found" }, 404);
+    // AUDIT_TDD 7.4: KV cannot share a D1 batch, so the event is recorded after the KV write.
+    // The view never carries a token hash; the snapshot and metadata are built from it by hand.
+    await recordEvent(getDb(c.env.DB), {
+      actor: authUser,
+      tripId: null,
+      entityType: "oauth_grant",
+      entityId: grantId,
+      action: "revoke",
+      before: {
+        grantId: grant.id,
+        userId: authUser.id,
+        clientId: grant.clientId,
+        clientName: grant.clientName,
+        scopes: grant.scopes,
+        createdAt: grant.createdAt,
+      },
+      metadata: { scopes: grant.scopes, clientId: grant.clientId, selfService: true },
+    });
     return c.body(null, 204);
   }
 );
@@ -840,16 +792,21 @@ app.post("/link/:token/confirm", async (c) => {
       return htmlError("Link Not Found", "This account link is invalid or has already been used.");
     }
 
+    // Actor for the merge (and for user.create when the caller is new): the linking user,
+    // with the session's channel when jwtOnlyMiddleware resolved one (dev vs web).
+    const session = c.get("user") as Actor | undefined;
+    const audit = { channel: session?.channel ?? "web", requestId: requestIdFrom(c.req.header("cf-ray")) } as const;
     let authUser = await findUserByEmail(db, identity.email);
     if (!authUser) {
-      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+      authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL, audit);
     }
+    const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, clientName: null, requestId: audit.requestId };
 
     if (keepUserId !== authUser.id) {
       // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
       // in the catch below (500) before any D1 change. The keep user must re-consent.
       await revokeAllGrantsForUser(c.env, authUser.id);
-      await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+      await mergeAccountsD1(db, actor, keepUserId, authUser.id, { promoteRole: false });
     }
 
     return htmlPage("Accounts Linked", `
@@ -980,16 +937,21 @@ app.openapi(
       const keepExists = await db.select({ id: users.id }).from(users).where(eq(users.id, keepUserId)).limit(1);
       if (!keepExists.length) return c.json({ error: "Token not found or already used" }, 404);
 
+      // Actor for the merge (and for user.create when the caller is new): the linking user,
+      // with the session's channel when jwtOnlyMiddleware resolved one (dev vs web).
+      const session = c.get("user") as Actor | undefined;
+      const audit = { channel: session?.channel ?? "web", requestId: requestIdFrom(c.req.header("cf-ray")) } as const;
       let authUser = await findUserByEmail(db, identity.email);
       if (!authUser) {
-        authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL);
+        authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL, audit);
       }
+      const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, clientName: null, requestId: audit.requestId };
 
       if (keepUserId !== authUser.id) {
         // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
         // in the catch below (500) before any D1 change. The keep user must re-consent.
         await revokeAllGrantsForUser(c.env, authUser.id);
-        await mergeAccountsD1(db, keepUserId, authUser.id, { promoteRole: false });
+        await mergeAccountsD1(db, actor, keepUserId, authUser.id, { promoteRole: false });
       }
 
       const [userRows, emailRows] = await Promise.all([

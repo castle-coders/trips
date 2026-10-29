@@ -2,9 +2,10 @@ import { createMiddleware } from "hono/factory";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getCookie } from "hono/cookie";
 import { eq } from "drizzle-orm";
-import type { Env, AuthUser, CfIdentity } from "../db";
-import { getDb } from "../db";
+import type { Env, Actor, AuthUser, CfIdentity, Channel } from "../db";
+import { getDb, requestIdFrom } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
+import { insertUserWithPrimaryEmail } from "../services/users";
 
 export { findUserByEmail, createUserWithEmail };
 
@@ -38,12 +39,17 @@ async function findUserByEmail(
   return rows.length ? rows[0] : null;
 }
 
-/** Create a new user and their primary email entry */
+/**
+ * Create a new user and their primary email entry. Records `user.create` with the new user as
+ * its own actor (AUDIT_TDD 7.2): `audit.channel` is the session's channel when the caller knows
+ * it (default "web"), `audit.requestId` the cf-ray when present.
+ */
 async function createUserWithEmail(
   db: ReturnType<typeof getDb>,
   email: string,
   name: string,
-  bootstrapAdminEmail?: string
+  bootstrapAdminEmail?: string,
+  audit: { channel?: Channel; requestId?: string | null } = {}
 ): Promise<AuthUser> {
   const isBootstrapAdmin = bootstrapAdminEmail && email === bootstrapAdminEmail;
   const anyUser = await db.select({ id: users.id }).from(users).limit(1);
@@ -51,14 +57,17 @@ async function createUserWithEmail(
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
-  await db.insert(users).values({ id, email, name, role, createdAt: now, updatedAt: now });
-  await db.insert(userEmails).values({
-    id: crypto.randomUUID(),
-    userId: id,
+  const actor: Actor = {
+    id,
     email,
-    isPrimary: true,
-    createdAt: now,
-  });
+    name,
+    role,
+    channel: audit.channel ?? "web",
+    clientId: null,
+    clientName: null,
+    requestId: audit.requestId ?? null,
+  };
+  await insertUserWithPrimaryEmail(db, actor, { id, email, name, role, now });
 
   return { id, email, name, role };
 }
@@ -68,8 +77,9 @@ async function authenticateCFAccess(
   teamDomain: string,
   audienceTag: string,
   db: ReturnType<typeof getDb>,
+  requestId: string | null,
   bootstrapAdminEmail?: string
-): Promise<AuthUser | null> {
+): Promise<Actor | null> {
   try {
     const jwks = getJWKS(teamDomain);
     const { payload } = await jwtVerify(jwt, jwks, {
@@ -88,6 +98,7 @@ async function authenticateCFAccess(
         userName: users.name,
         userEmail: users.email,
         userRole: users.role,
+        commonName: serviceIdentities.commonName,
       })
       .from(serviceIdentities)
       .innerJoin(users, eq(serviceIdentities.userId, users.id))
@@ -100,6 +111,10 @@ async function authenticateCFAccess(
         email: serviceRows[0].userEmail,
         name: serviceRows[0].userName,
         role: serviceRows[0].userRole,
+        channel: "service_token",
+        clientId: serviceRows[0].commonName,
+        clientName: serviceRows[0].commonName,
+        requestId,
       };
     }
 
@@ -107,7 +122,8 @@ async function authenticateCFAccess(
     const email = payload.email as string | undefined;
     if (!email) return null;
 
-    return findUserByEmail(db, email);
+    const user = await findUserByEmail(db, email);
+    return user ? { ...user, channel: "web", clientId: null, clientName: null, requestId } : null;
   } catch {
     return null;
   }
@@ -116,13 +132,16 @@ async function authenticateCFAccess(
 async function authenticateDevUser(
   email: string,
   db: ReturnType<typeof getDb>,
-): Promise<AuthUser | null> {
-  return findUserByEmail(db, email);
+  requestId: string | null,
+): Promise<Actor | null> {
+  const user = await findUserByEmail(db, email);
+  return user ? { ...user, channel: "dev", clientId: null, clientName: null, requestId } : null;
 }
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   const db = getDb(c.env.DB);
   const path = c.req.path;
+  const requestId = requestIdFrom(c.req.header("cf-ray"));
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
   if (cfJwt && c.env.CF_ACCESS_TEAM_DOMAIN && c.env.CF_ACCESS_AUDIENCE) {
@@ -131,6 +150,7 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
       c.env.CF_ACCESS_TEAM_DOMAIN,
       c.env.CF_ACCESS_AUDIENCE,
       db,
+      requestId,
       c.env.BOOTSTRAP_ADMIN_EMAIL
     );
     if (user) {
@@ -144,7 +164,7 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
   if (c.env.DEV_MODE) {
     const devEmail = c.req.header("X-Dev-User-Email");
     if (devEmail) {
-      const user = await authenticateDevUser(devEmail, db);
+      const user = await authenticateDevUser(devEmail, db, requestId);
       if (user) {
         c.set("user", user);
         return next();
@@ -166,6 +186,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
   const path = c.req.path;
   const isInviteFlow = path.includes("/invite/");
   const isLinkFlow = path.includes("/link");
+  const requestId = requestIdFrom(c.req.header("cf-ray"));
   console.log(`[jwt-only] path=${path} invite=${isInviteFlow} link=${isLinkFlow}`);
 
   const cfJwt = c.req.header("Cf-Access-Jwt-Assertion") || getCookie(c, "CF_Authorization");
@@ -199,7 +220,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
         const existing = await findUserByEmail(db, email);
         console.log(`[jwt-only] existingUser=${!!existing}`);
         if (existing) {
-          c.set("user", existing);
+          c.set("user", { ...existing, channel: "web", clientId: null, clientName: null, requestId });
         }
 
         return next();
@@ -221,7 +242,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
 
       const existing = await findUserByEmail(db, devEmail);
       if (existing) {
-        c.set("user", existing);
+        c.set("user", { ...existing, channel: "dev", clientId: null, clientName: null, requestId });
       }
 
       return next();

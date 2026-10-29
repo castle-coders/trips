@@ -64,6 +64,20 @@
       "when": 1774960000000,
       "tag": "0008_user_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793253607112,
+      "tag": "0011_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793263122260,
+      "tag": "0012_audit_client_name",
+      "breakpoints": true
     }
   ]
 }

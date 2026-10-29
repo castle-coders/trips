@@ -1,0 +1,1 @@
+ALTER TABLE `audit_events` ADD `client_name` text;
