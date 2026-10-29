@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
 import { mergeAccounts } from "../lib/merge";
-import { recordEvent } from "../services/audit";
+import { AdminAuditQuerySchema, AuditPageSchema, type AuditPageResponse } from "../schemas/audit";
+import { listAdminEvents, recordEvent } from "../services/audit";
 import {
   createServiceIdentity,
   createUser,
@@ -595,6 +596,37 @@ app.openapi(
       },
     });
     return c.body(null, 204);
+  }
+);
+
+// --- Audit history (AUDIT_TDD 8, AUDIT_PRD 6.5) ---
+//
+// Every event across all trips plus administration events (trip_id IS NULL), including trips
+// that no longer exist. Admin-only in the service (`listAdminEvents`), which is also what adds
+// `requestId` to the view. A bad cursor is ServiceError("validation") -> 400 through onError.
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/audit",
+    tags: ["Admin"],
+    summary: "List audit events across all trips and administration",
+    description:
+      "Newest first. Includes events for deleted trips and administration events with no trip. " +
+      "Each event carries `requestId`.",
+    request: { query: AdminAuditQuerySchema },
+    responses: {
+      200: {
+        description: "A page of audit events, each with requestId",
+        content: { "application/json": { schema: AuditPageSchema } },
+      },
+      400: { description: "Invalid cursor or filter", content: { "application/json": { schema: ErrorSchema } } },
+      403: { description: "Not an admin", content: { "application/json": { schema: ErrorSchema } } },
+    },
+  }),
+  async (c) => {
+    const page = await listAdminEvents(getDb(c.env.DB), c.get("user"), c.req.valid("query"));
+    return c.json(page as AuditPageResponse, 200);
   }
 );
 

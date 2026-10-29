@@ -381,6 +381,13 @@ function toView(row: AuditRow, includeRequestId: boolean): AuditEventView {
   return view;
 }
 
+/** An ISO timestamp bound in the exact textual form createdAt is stored in. Invalid input is a validation error. */
+function toStoredIso(value: string): string {
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) throw new ServiceError("validation", "Invalid timestamp");
+  return new Date(t).toISOString();
+}
+
 /** Shared filter clauses for `ListOptions`. The cursor clause is added here too. */
 function commonFilters(opts: ListOptions): SQL[] {
   const clauses: SQL[] = [];
@@ -389,8 +396,10 @@ function commonFilters(opts: ListOptions): SQL[] {
   if (opts.entityId !== undefined) clauses.push(eq(auditEvents.entityId, opts.entityId));
   if (opts.actorUserId !== undefined) clauses.push(eq(auditEvents.actorUserId, opts.actorUserId));
   if (opts.action !== undefined) clauses.push(eq(auditEvents.action, opts.action));
-  if (opts.since !== undefined) clauses.push(gte(auditEvents.createdAt, opts.since));
-  if (opts.until !== undefined) clauses.push(lte(auditEvents.createdAt, opts.until));
+  // createdAt is stored as toISOString() (UTC, milliseconds). Normalize the bounds to the same
+  // form so offsets and missing milliseconds compare correctly as strings (reviewer phase-2 #1).
+  if (opts.since !== undefined) clauses.push(gte(auditEvents.createdAt, toStoredIso(opts.since)));
+  if (opts.until !== undefined) clauses.push(lte(auditEvents.createdAt, toStoredIso(opts.until)));
   return clauses;
 }
 

@@ -181,7 +181,7 @@ All endpoints require authentication and return `AuditEvent` objects as describe
 Rules:
 - Pagination is cursor-based on `seq`. Responses carry `nextCursor`; the cursor is opaque to clients.
 - Viewers on the trip get `403`. Non-members get `404`, matching `requireTripRole` behavior for the entity itself.
-- History of a deleted trip is reachable only through `/admin/audit`, since no one is a member of a deleted trip.
+- History of a deleted trip is reachable only by admins, through `/admin/audit` or `/trips/{tripId}/audit` (admins are Owner everywhere with no trip-existence check), since no one else is a member of a deleted trip. (amended at Phase 2)
 - The endpoints are included in the OpenAPI document like every other route.
 
 ### 6.6 Web app
