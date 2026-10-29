@@ -35,23 +35,21 @@ app.onError((err, c) => {
   return c.text("Internal Server Error", 500);
 });
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "https://trips.prenticew.com",
-];
-
-app.use("*", cors({
-  origin: (origin) => {
-    if (ALLOWED_ORIGINS.includes(origin)) return origin;
-    if (origin.endsWith(".trips-web-cm1.pages.dev")) return origin;
-    return null;
-  },
-  allowHeaders: ["Content-Type", "Authorization", "CF-Access-Jwt-Assertion", "X-Dev-User-Email"],
-  allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
-  exposeHeaders: ["Content-Length"],
-  maxAge: 600,
-  credentials: true,
-}));
+app.use("*", (c, next) => {
+  const allowedOrigins = ["http://localhost:5173", c.env.WEB_APP_ORIGIN].filter(Boolean);
+  return cors({
+    origin: (origin) => {
+      if (allowedOrigins.includes(origin)) return origin;
+      if (origin.endsWith(".trips-web-cm1.pages.dev")) return origin;
+      return null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "CF-Access-Jwt-Assertion", "X-Dev-User-Email"],
+    allowMethods: ["POST", "GET", "OPTIONS", "PUT", "DELETE"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  })(c, next);
+});
 
 // Public routes (no auth required)
 app.route("/auth", authRoutes);

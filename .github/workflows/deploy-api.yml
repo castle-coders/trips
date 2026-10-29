@@ -16,12 +16,12 @@ jobs:
         working-directory: ./api
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: './api/package-lock.json'
 
@@ -37,6 +37,10 @@ jobs:
       - name: Validate Deploy Secrets
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          ROUTE_PATTERN: ${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}
+          ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+          TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          WEB_APP_ORIGIN: ${{ secrets.WEB_APP_ORIGIN }}
           KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
           MCP_HOST: ${{ secrets.MCP_HOST }}
           MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
@@ -50,6 +54,19 @@ jobs:
 
           uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
           [[ "$D1_ID" =~ $uuid_re ]] || err "Repository secret CLOUDFLARE_D1_DATABASE_ID is missing or not a UUID."
+
+          # App route, zone and Access team domain replace committed placeholders,
+          # so they are required. The route is <host>/<path>, e.g. host/api/*.
+          host_re='^[a-z0-9.-]+$'
+          [[ "$ROUTE_PATTERN" =~ ^[a-z0-9.-]+/[A-Za-z0-9._/*-]*$ ]] || err "Repository secret CLOUDFLARE_ROUTE_PATTERN is missing or not <host>/<path> (only a-z, 0-9, . - _ / *)."
+          [[ "$ZONE_NAME" =~ $host_re ]] || err "Repository secret CLOUDFLARE_ZONE_NAME is missing or not a bare lowercase hostname."
+          [[ "$TEAM_DOMAIN" =~ $host_re ]] || err "Repository secret CF_ACCESS_TEAM_DOMAIN is missing or not a bare lowercase hostname (e.g. <team>.cloudflareaccess.com)."
+          # CORS origin for the web app: scheme://host[:port], no path.
+          if [ -z "$WEB_APP_ORIGIN" ]; then
+            echo "::warning::Repository secret WEB_APP_ORIGIN is not set; the web app's origin will be refused by CORS."
+          elif ! [[ "$WEB_APP_ORIGIN" =~ ^https://[a-z0-9.-]+(:[0-9]+)?$ ]]; then
+            err "Repository secret WEB_APP_ORIGIN must be https://<host> with no path or trailing slash."
+          fi
 
           # OAUTH_KV (Stage 2 OAuth storage) is a required binding: fail rather
           # than deploy with the placeholder id.
@@ -68,7 +85,6 @@ jobs:
             fi
           done
 
-          host_re='^[a-z0-9.-]+$'
           host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
           if [ -n "$host" ]; then
             # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
@@ -89,10 +105,19 @@ jobs:
 
           exit "$fail"
 
-      - name: Inject D1 Database ID
+      # Shapes validated above, so none can break the sed expressions (| delimiter).
+      - name: Inject production config
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
-        run: sed -i "s/PROD_DB_ID_PLACEHOLDER/${D1_ID}/g" wrangler.toml
+          ROUTE_PATTERN: ${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}
+          ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+          TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+        run: |
+          sed -i "s|PROD_DB_ID_PLACEHOLDER|${D1_ID}|g" wrangler.toml
+          sed -i "s|PROD_ROUTE_PLACEHOLDER|${ROUTE_PATTERN}|g" wrangler.toml
+          sed -i "s|PROD_ZONE_PLACEHOLDER|${ZONE_NAME}|g" wrangler.toml
+          sed -i "s|PROD_CF_TEAM_DOMAIN_PLACEHOLDER|${TEAM_DOMAIN}|g" wrangler.toml
+          ! grep -q 'PROD_[A-Z_]*PLACEHOLDER' wrangler.toml || { echo "::error::A production placeholder was not replaced in wrangler.toml"; exit 1; }
 
       # Shape validated above (32 hex characters), so it is safe in the sed expression.
       - name: Inject OAuth KV Namespace ID
@@ -119,7 +144,7 @@ jobs:
           grep -qF "{ pattern = \"${host}\", custom_domain = true }," wrangler.toml || { echo "::error::MCP custom domain injection failed"; exit 1; }
 
       - name: Run Migrations
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -136,6 +161,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          WEB_APP_ORIGIN: ${{ secrets.WEB_APP_ORIGIN }}
           MCP_HOST: ${{ secrets.MCP_HOST }}
           MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
           ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
@@ -146,6 +172,7 @@ jobs:
           host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
           npx wrangler deploy \
             --var "BOOTSTRAP_ADMIN_EMAIL:${BOOTSTRAP_ADMIN_EMAIL}" \
+            --var "WEB_APP_ORIGIN:${WEB_APP_ORIGIN}" \
             --var "MCP_HOST:${host}" \
             --var "MCP_PUBLIC_URL:${MCP_PUBLIC_URL}" \
             --var "ACCESS_AUTHORIZATION_URL:${ACCESS_AUTHORIZATION_URL}" \

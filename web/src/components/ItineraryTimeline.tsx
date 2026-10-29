@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Itinerary } from "../lib/types";
 import { Plane, Bed, TrainFront, Car, Utensils, Bus, MapPin, Map as MapIcon } from "lucide-react";
 
@@ -221,12 +222,18 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
     const time = timeKey ? c[timeKey] : "";
     const timeTz = timeKey ? c[`${timeKey}Tz`] || undefined : undefined;
 
+    // For transit-style items (Rail, Transport) show the arrival alongside the
+    // departure as "departure → arrival", matching how flight legs render.
+    const depLabel = time ? formatTime(time, timeTz) : "";
+    const arrLabel = c.arrivalTime ? formatTime(c.arrivalTime, c.arrivalTimeTz || undefined) : "";
+    const timeLabel = arrLabel ? `${depLabel} → ${arrLabel}` : depLabel;
+
     entries.push({
       key: item.id,
       item,
       displayType: item.type,
       title,
-      timeLabel: time ? formatTime(time, timeTz) : "",
+      timeLabel,
       sortTime: time ? new Date(wallClockToUTC(time)).getTime() : Infinity,
     });
   }
@@ -279,6 +286,13 @@ export function ItineraryTimeline({
   showCost?: boolean;
 }) {
   const entries = buildEntries(items);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyConfirmation = (key: string, value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((cur) => (cur === key ? null : cur)), 2000);
+  };
 
   if (!entries.length) {
     return (
@@ -328,9 +342,17 @@ export function ItineraryTimeline({
                     {entry.item.status}
                   </span>
                   {entry.item.confirmationNumber && (
-                    <span className="text-xs text-gray-400">
-                      #{entry.item.confirmationNumber}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyConfirmation(entry.key, entry.item.confirmationNumber!);
+                      }}
+                      className={`text-xs transition-colors ${copiedKey === entry.key ? "text-green-600" : "text-gray-400 hover:text-gray-600"}`}
+                      title="Click to copy confirmation number"
+                    >
+                      {copiedKey === entry.key ? "Copied!" : `#${entry.item.confirmationNumber}`}
+                    </button>
                   )}
                 </div>
                 {onDelete && (

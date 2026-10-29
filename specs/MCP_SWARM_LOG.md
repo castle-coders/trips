@@ -85,3 +85,10 @@ One line per agent invocation: phase | agent | target | outcome | follow-ups.
 - `deploy-api.yml` now injects `{ pattern = "<MCP_HOST>", custom_domain = true }` from the `MCP_HOST` secret. `MCP_ZONE_NAME` was removed (validation, injection and docs).
 - Verified: `wrangler deploy --dry-run` accepts the injected entry; the validation step was run with valid, malformed and empty inputs; 512 tests pass; `tsc` is clean.
 - README, operator checklist (no DNS record, token permissions, disable steps) and TDD 8.1 updated.
+
+## Merge of main (2026-10-28)
+
+- Merged origin/main (#26–#31). Conflicts: deploy-api.yml, wrangler.toml, api/src/index.ts, README.md.
+- Kept main's de-hard-coding (route, zone, team domain placeholders; `WEB_APP_ORIGIN` CORS) and action/Node bumps, on this branch's env-only, validate-first workflow. The three new placeholders are validated and required; `WEB_APP_ORIGIN` is validated and warns when unset.
+- `oauth.policy.test.ts` CORS test now uses `WEB_APP_ORIGIN` instead of the production origin.
+- Verified: 512 tests pass, tsc clean, validation step exercised, all placeholders injected, `wrangler deploy --dry-run` accepts the result, web build passes.

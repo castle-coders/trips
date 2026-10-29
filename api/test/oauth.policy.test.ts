@@ -458,11 +458,15 @@ describe("main hostname while MCP_HOST is set", () => {
     }
   });
 
-  it("main-host CORS is unchanged (allowed origin reflected with credentials)", async () => {
+  it("main-host CORS is unchanged (WEB_APP_ORIGIN reflected with credentials)", async () => {
     const alice = await seedUser("alice@example.test", "viewer");
-    const res = await asMain(alice.email, "/trips", { headers: { origin: "https://trips.prenticew.com" } });
-    expect(res.headers.get("access-control-allow-origin")).toBe("https://trips.prenticew.com");
+    const webOrigin = "https://web.example.test";
+    const e = stage2Env({ WEB_APP_ORIGIN: webOrigin });
+    const res = await asMain(alice.email, "/trips", { headers: { origin: webOrigin } }, e);
+    expect(res.headers.get("access-control-allow-origin")).toBe(webOrigin);
     expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+    const other = await asMain(alice.email, "/trips", { headers: { origin: "https://evil.example.test" } }, e);
+    expect(other.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("an MCP_HOST that differs from the request host never enters the provider", async () => {

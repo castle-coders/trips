@@ -360,14 +360,14 @@ Three CF Access applications are required:
 
 | Application | Path(s) | Policy | Purpose |
 |---|---|---|---|
-| Trips - Eval | `trips.prenticew.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval |
-| Trips - Invites & Linking | `trips.prenticew.com/api/auth/invite/*`, `trips.prenticew.com/api/auth/link*` | **Allow — Everyone** | Lets unknown users authenticate to accept invites or link accounts |
-| Trips | `trips.prenticew.com` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
+| Trips - Eval | `trips.your-domain.com/api/eval/*` | **Bypass** | Allows CF Access to call the eval endpoints without triggering another eval |
+| Trips - Invites & Linking | `trips.your-domain.com/api/auth/invite/*`, `trips.your-domain.com/api/auth/link*` | **Allow — Everyone** | Lets unknown users authenticate to accept invites or link accounts |
+| Trips | `trips.your-domain.com` | **Allow — External Evaluation** | Blocks unknown users at the CF Access layer |
 
 The External Evaluation rule on the "Trips" application should be configured with:
 
-- **Evaluate URL**: `https://trips.prenticew.com/api/eval/evaluate`
-- **Keys URL**: `https://trips.prenticew.com/api/eval/keys`
+- **Evaluate URL**: `https://trips.your-domain.com/api/eval/evaluate`
+- **Keys URL**: `https://trips.your-domain.com/api/eval/keys`
 
 For the [MCP server](#mcp-server), the "Trips" application also needs a **Service Auth** policy that includes the MCP client's service token, next to the External Evaluation policy. `/api/mcp` must not match the Eval or Invites & Linking applications. With the paths above, it doesn't.
 
@@ -426,15 +426,16 @@ npx wrangler secret put ACCESS_CLIENT_SECRET
 
 ### Environment variables
 
-Configured in `wrangler.toml` under `[vars]`:
+Configured in `wrangler.toml` under `[vars]`. `CF_ACCESS_TEAM_DOMAIN` ships as a placeholder (`PROD_CF_TEAM_DOMAIN_PLACEHOLDER`) and is filled in at deploy time from a GitHub Actions secret so the production Cloudflare Access domain isn't committed to the repo:
 
 | Variable | Description |
 |---|---|
-| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) |
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (e.g., `yourteam.cloudflareaccess.com`) — injected at deploy time |
 | `CF_ACCESS_AUDIENCE` | AUD tag from the main "Trips" CF Access application |
 | `CF_ACCESS_INVITE_AUDIENCE` | AUD tag from the "Trips - Invites & Linking" CF Access application |
 | `BOOTSTRAP_ADMIN_EMAIL` | Email that gets admin role on first login |
 | `EXTERNAL_EVAL_KEY_ID` | Key ID for the eval JWKS (default: `eval-key-1`) |
+| `WEB_APP_ORIGIN` | Production web app origin allowed by CORS (e.g., `https://trips.your-domain.com`) — passed as a var override at deploy time, not committed |
 | `MCP_HOST` | Stage 2. Bare MCP hostname (`<mcp-host>`, no scheme, port or path). Empty turns Stage 2 off |
 | `MCP_PUBLIC_URL` | Stage 2. Public MCP endpoint, `https://<mcp-host>/mcp`, used as the OAuth resource identifier. Must equal the URL entered in clients exactly |
 | `ACCESS_AUTHORIZATION_URL` | Stage 2. Authorization endpoint of the Access for SaaS OIDC application |
@@ -484,8 +485,12 @@ GitHub Actions secrets required:
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers and D1 permissions |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
+| `CLOUDFLARE_ROUTE_PATTERN` | Worker route pattern, e.g. `trips.your-domain.com/api/*` (injected into `wrangler.toml` at deploy time) |
+| `CLOUDFLARE_ZONE_NAME` | Cloudflare zone name, e.g. `your-domain.com` (injected into `wrangler.toml` at deploy time) |
+| `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain (injected into `wrangler.toml` at deploy time) |
 | `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
 | `CLOUDFLARE_KV_OAUTH_ID` | `OAUTH_KV` namespace ID (injected into `wrangler.toml` at deploy time). **Required**: the API deploy fails without it |
+| `WEB_APP_ORIGIN` | Production web app origin, passed as a var override during API deploy for CORS |
 | `MCP_HOST` | MCP Stage 2. Bare `<mcp-host>`. When set, the workflow attaches it as a Workers Custom Domain and passes it as a var. Leave unset to keep Stage 2 off |
 | `MCP_PUBLIC_URL` | MCP Stage 2. Passed as a var |
 | `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` | MCP Stage 2. Passed as vars |
@@ -498,6 +503,9 @@ The workflow's first step after `npm ci`, **Validate Deploy Secrets**, checks th
 |---|---|
 | `CLOUDFLARE_D1_DATABASE_ID` | Required. A UUID |
 | `CLOUDFLARE_KV_OAUTH_ID` | Required. 32 lowercase hex characters |
+| `CLOUDFLARE_ROUTE_PATTERN` | Required. `<host>/<path>` using only `a-z`, `0-9`, `.`, `-`, `_`, `/` and `*` |
+| `CLOUDFLARE_ZONE_NAME`, `CF_ACCESS_TEAM_DOMAIN` | Required. Bare lowercase hostnames |
+| `WEB_APP_ORIGIN` | `https://<host>` with no path or trailing slash. Unset only warns, but then CORS refuses the web app |
 | `MCP_HOST` | Bare hostname: after lowercasing, only `a-z`, `0-9`, `.` and `-` |
 | `MCP_PUBLIC_URL` | Exactly `https://<MCP_HOST in lowercase>/mcp`. Must be empty when `MCP_HOST` is empty |
 | `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` | When set, start with `https://` and contain no whitespace, quotes or backslashes |
@@ -511,7 +519,7 @@ cd api
 npm run deploy
 ```
 
-A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first. If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with `{ pattern = "<mcp-host>", custom_domain = true },` and pass the Stage 2 vars with `--var`, as the workflow does.
+A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER`, `PROD_ROUTE_PLACEHOLDER`, `PROD_ZONE_PLACEHOLDER`, `PROD_CF_TEAM_DOMAIN_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first, and pass `--var WEB_APP_ORIGIN:<origin>`. If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with `{ pattern = "<mcp-host>", custom_domain = true },` and pass the Stage 2 vars with `--var`, as the workflow does.
 
 ## Tech Stack
 

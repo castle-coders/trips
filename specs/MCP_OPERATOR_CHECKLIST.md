@@ -89,7 +89,7 @@ From the bottom of `api/test/acceptance.test.ts`:
 
 ## Pre-existing hard-coded config (not introduced by this work; operator to decide)
 
-- `api/wrangler.toml` still contains the real app route, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE` values.
-- `api/src/routes/auth.ts` (link-confirm HTML) and `api/src/index.ts` (CORS allow list) contain the app hostname.
+- Since main #28, the app route, zone and Access team domain are placeholders injected from the `CLOUDFLARE_ROUTE_PATTERN`, `CLOUDFLARE_ZONE_NAME` and `CF_ACCESS_TEAM_DOMAIN` secrets, and the CORS origin comes from `WEB_APP_ORIGIN`. The deploy now **fails** if any of the first three is missing, and warns if `WEB_APP_ORIGIN` is missing. Set all four before merging.
+- `api/wrangler.toml` still contains the `CF_ACCESS_AUDIENCE` and `CF_ACCESS_INVITE_AUDIENCE` values, and `api/src/index.ts` still allows `*.trips-web-cm1.pages.dev` preview origins.
 - `authMiddleware` enables the dev bypass when `DEV_MODE` is any non-empty string (`DEV_MODE=false` would enable it). Consider `=== "true"`.
 - Web lint: 5 pre-existing errors remain in `ItineraryTimeline.tsx`, `lib/auth.tsx`, `AcceptInvite.tsx` and `TripDetail.tsx` (×2); the 6 in `Account.tsx`/`Admin.tsx` were fixed.
