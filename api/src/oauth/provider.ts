@@ -7,8 +7,8 @@
  * - `getOAuthProvider(env)`: the memoized `OAuthProvider` the dispatcher in `src/index.ts` calls.
  *
  * Library behavior relied on (MCP_SPIKE_RESULTS): PKCE is mandatory for public clients; tokens
- * are only read from the `Authorization: Bearer` header; `requiredScopes` is advertised but NOT
- * enforced (each MCP tool checks `trips:read`/`trips:write` itself); refresh tokens are issued to
+ * are only read from the `Authorization: Bearer` header; `requiredScopes` (CHALLENGE_SCOPES) is
+ * advertised but NOT enforced (each MCP tool checks `trips:read`/`trips:write` itself); refresh tokens are issued to
  * every client while `refreshTokenTTL !== 0`; CIMD needs `global_fetch_strictly_public`.
  *
  * CORS: the library reflects any request `Origin` on its API, token, registration and metadata
@@ -46,7 +46,13 @@ export const OAUTH_RATE_LIMITED_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 export const SCOPES_SUPPORTED = ["trips:read", "trips:write", "offline_access"];
-export const REQUIRED_SCOPES = ["trips:read"];
+/**
+ * Scopes named in the 401 challenge and in the protected-resource metadata (`requiredScopes`).
+ * MCP clients request exactly these, and Gemini offers no way to choose. Both are listed so the
+ * consent page can offer write access; `trips:write` is unticked there by default, the user
+ * decides, and a read-only token still works because the library does not enforce this list.
+ */
+export const CHALLENGE_SCOPES = ["trips:read", "trips:write"];
 
 const ONE_HOUR = 60 * 60;
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
@@ -74,7 +80,7 @@ function resourceMetadataUrl(resource: string): string {
 /**
  * 401 invalid_token in the library's own format (`buildWwwAuthenticateHeader` and
  * `createErrorResponse` in workers-oauth-provider): `Bearer realm="OAuth", resource_metadata=...,
- * error="invalid_token", scope="<requiredScopes>"`, JSON body, `no-store`. Carrying
+ * error="invalid_token", scope="<CHALLENGE_SCOPES>"`, JSON body, `no-store`. Carrying
  * `resource_metadata` lets the client restart discovery and re-authorize.
  */
 function invalidTokenResponse(request: Request, env: Bindings): Response {
@@ -83,7 +89,7 @@ function invalidTokenResponse(request: Request, env: Bindings): Response {
   if (resource && new URL(request.url).origin === new URL(resource).origin) {
     challenge += `, resource_metadata="${resourceMetadataUrl(resource)}"`;
   }
-  challenge += `, error="invalid_token", scope="${REQUIRED_SCOPES.join(" ")}"`;
+  challenge += `, error="invalid_token", scope="${CHALLENGE_SCOPES.join(" ")}"`;
   return new Response(JSON.stringify({ error: "invalid_token", error_description: "Invalid access token" }), {
     status: 401,
     headers: {
@@ -159,7 +165,7 @@ export function buildProviderOptions(env: Bindings): OAuthProviderOptions<Bindin
     tokenEndpoint: TOKEN_ENDPOINT,
     clientRegistrationEndpoint: REGISTRATION_ENDPOINT,
     scopesSupported: [...SCOPES_SUPPORTED],
-    requiredScopes: [...REQUIRED_SCOPES],
+    requiredScopes: [...CHALLENGE_SCOPES],
     resourceMetadata: {
       resource, // must equal the URL users enter in Claude or Gemini, exactly
       authorization_servers: [new URL(resource).origin],
