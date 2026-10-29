@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, real, integer, index } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -131,3 +131,38 @@ export const itineraries = sqliteTable("itineraries", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/**
+ * Append-only audit log (AUDIT_TDD 4.1). No foreign keys: rows must survive user and trip
+ * deletion. `seq` is the primary key because SQLite only auto-increments an INTEGER PRIMARY
+ * KEY; it is never exposed raw (the pagination cursor encodes it). `id` is the public id.
+ */
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    seq: integer("seq").primaryKey({ autoIncrement: true }),
+    id: text("id").notNull().unique(),
+    createdAt: text("created_at").notNull(),
+    actorUserId: text("actor_user_id"), // no FK: survives user deletion; null for backfill
+    actorName: text("actor_name").notNull(),
+    actorEmail: text("actor_email").notNull(),
+    actorRole: text("actor_role").notNull(),
+    channel: text("channel").notNull(), // web | service_token | mcp_stage1 | mcp_oauth | dev | backfill
+    clientId: text("client_id"),
+    requestId: text("request_id"),
+    tripId: text("trip_id"), // no FK: survives trip deletion; null for admin events
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    entityLabel: text("entity_label").notNull(),
+    action: text("action").notNull(),
+    before: text("before", { mode: "json" }),
+    after: text("after", { mode: "json" }),
+    changes: text("changes", { mode: "json" }),
+    metadata: text("metadata", { mode: "json" }),
+  },
+  (t) => [
+    index("audit_events_trip_seq").on(t.tripId, t.seq),
+    index("audit_events_entity_seq").on(t.entityType, t.entityId, t.seq),
+    index("audit_events_actor_seq").on(t.actorUserId, t.seq),
+  ]
+);

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { AuthInfo } from "@modelcontextprotocol/server";
-import { getDb, type AuthUser, type Env } from "../db";
+import { getDb, type Actor, type Channel, type Env } from "../db";
 import { users } from "../db/schema";
 import type { Db } from "../services/access";
 
@@ -17,9 +17,24 @@ export class ScopeError extends Error {
 export interface McpRequestContext {
   db: Db;
   /** Reloaded from D1 once per request, so tools always see the current global role. */
-  user: AuthUser;
+  user: Actor;
   scopes: string[];
   log: (event: string, fields: Record<string, unknown>) => void;
+}
+
+const CHANNELS: ReadonlySet<string> = new Set<Channel>(["web", "service_token", "mcp_stage1", "mcp_oauth", "dev"]);
+
+/** Only the two MCP entry points build authInfo.extra, so a missing channel means Stage 2. */
+function readChannel(value: unknown): Channel {
+  if (value === undefined || value === null) return "mcp_oauth";
+  if (typeof value === "string" && CHANNELS.has(value)) return value as Channel;
+  throw new Error("MCP request has an invalid channel");
+}
+
+function readStringOrNull(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") return value;
+  throw new Error(`MCP request has an invalid ${field}`);
 }
 
 /**
@@ -34,6 +49,9 @@ export async function loadRequestContext(
 ): Promise<McpRequestContext> {
   const userId = authInfo?.extra?.userId;
   if (typeof userId !== "string" || !userId) throw new Error("MCP request has no authenticated user");
+  const channel = readChannel(authInfo?.extra?.channel);
+  const clientId = readStringOrNull(authInfo?.extra?.clientId, "clientId");
+  const requestId = readStringOrNull(authInfo?.extra?.requestId, "requestId");
 
   const db = getDb(env.DB);
   const rows = await db
@@ -45,7 +63,7 @@ export async function loadRequestContext(
 
   return {
     db,
-    user: rows[0],
+    user: { ...rows[0], channel, clientId, requestId },
     scopes: [...(authInfo?.scopes ?? [])],
     log: (event, fields) => {
       const parts = Object.entries(fields).map(([k, v]) => `${k}=${String(v)}`);

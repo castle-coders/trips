@@ -159,7 +159,7 @@ Table `audit_events`, append-only. No REST endpoint, service function or admin t
 
 Indexes: `(tripId, seq)`, `(entityType, entityId, seq)`, `(actorUserId, seq)`, `(seq)`.
 
-Snapshots exclude `createdAt`, `updatedAt`, `passwordHash`, every `token` column, and OAuth client secrets. Everything else on the row is included.
+Snapshots exclude `createdAt`, `updatedAt`, `passwordHash`, every `token` column, and OAuth client secrets. Everything else on the row is included. (amended 2026-10-28 at Gate 0: the `oauth_grant` snapshot keeps the grant's `createdAt`, since a revoke event is the only record of when the grant was made.)
 
 ### 6.4 What counts as a change
 

@@ -123,7 +123,12 @@ const apiHandler = {
       token: "", // never carry the bearer token into the MCP layer or its logs
       clientId: c.auth.clientId ?? "",
       scopes: [...c.auth.scope],
-      extra: { userId },
+      extra: {
+        userId,
+        channel: "mcp_oauth",
+        clientId: c.auth.clientId ?? null,
+        requestId: request.headers.get("cf-ray"),
+      },
     };
     return createTripsMcpHandler(env, ctx).fetch(request, { authInfo });
   },

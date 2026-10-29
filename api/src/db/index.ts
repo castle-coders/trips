@@ -9,6 +9,16 @@ export interface AuthUser {
   role: string;
 }
 
+export type Channel = "web" | "service_token" | "mcp_stage1" | "mcp_oauth" | "dev";
+
+export interface Actor extends AuthUser {
+  channel: Channel;
+  /** OAuth client id (mcp_oauth) or service identity common name (service_token, mcp_stage1). */
+  clientId: string | null;
+  /** Cloudflare cf-ray when present. */
+  requestId: string | null;
+}
+
 export interface CfIdentity {
   email: string;
   name: string;
@@ -60,7 +70,7 @@ export type Env = {
     ACCESS_CLIENT_SECRET?: string;
   };
   Variables: {
-    user: AuthUser;
+    user: Actor;
     cfIdentity: CfIdentity;
   };
 };

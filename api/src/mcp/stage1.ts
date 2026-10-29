@@ -14,7 +14,12 @@ stage1.all("/mcp", authMiddleware, mcpRateLimit, async (c) => {
     token: "", // not an OAuth token; never logged
     clientId: "cf-access",
     scopes: ["trips:read", "trips:write"],
-    extra: { userId: user.id },
+    extra: {
+      userId: user.id,
+      channel: "mcp_stage1",
+      clientId: user.clientId,
+      requestId: c.req.header("cf-ray") ?? null,
+    },
   };
   return createTripsMcpHandler(c.env, c.executionCtx).fetch(c.req.raw, { authInfo });
 });
