@@ -2,7 +2,7 @@
 
 Orchestration plan for implementing `specs/AUDIT_TDD.md` with the agents in `.claude/agents/audit-*.md`. The orchestrator is the main Claude Code session. Subagents do not spawn subagents and do not commit; the orchestrator integrates, runs the gate checks, and commits locally. Nothing is pushed and no PR is opened during the run; the user reviews the gate commits and decides how to ship.
 
-Status: started 2026-10-28 on branch `claude/audit-history`. Progress in `specs/AUDIT_SWARM_LOG.md`.
+Status: complete 2026-10-29 on branch `claude/audit-history`, four gate commits. Log in `specs/AUDIT_SWARM_LOG.md`.
 
 ## Agents
 

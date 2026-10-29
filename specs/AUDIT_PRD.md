@@ -190,7 +190,7 @@ Rules:
 - A new **Activity** tab alongside the existing views. It lists events newest first as sentences: "Alice changed Flight UA 123 departure time from 08:10 to 09:45", "Claude (for Bob) added expense Dinner, $84.00", "Carol removed Dave from the trip". Each entry expands to the full field-level diff.
 - Filters: by person, by item type, by date range. Infinite scroll or "Load more" driven by `nextCursor`.
 - Entries made through MCP show the channel and client name ("via Claude") so members can tell human edits from agent edits.
-- Each itinerary item, expense and participant has a **History** affordance that opens the per-item history (`6.5`, second endpoint).
+- Each itinerary item, expense and participant has a **History** affordance that opens the per-item history (`6.5`, second endpoint). (amended at Phase 3: the trip page renders no expense or document rows today, so History controls exist on itinerary cards and participant rows; the endpoint supports every entity type.)
 - The Activity tab and the History affordances are not rendered for Viewers. The API enforces this independently of the UI.
 
 **Admin page** (`Admin.tsx`):

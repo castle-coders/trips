@@ -270,7 +270,7 @@ export function auditInsert(db: Db, input: EventInput): AuditStatement | null {
     actorRole: actor.role,
     channel: actor.channel,
     clientId: actor.clientId,
-    clientName: actor.clientName,
+    clientName: actor.clientName === null ? null : actor.clientName.slice(0, LABEL_MAX_LENGTH),
     requestId: actor.requestId,
     tripId: input.tripId,
     entityType,

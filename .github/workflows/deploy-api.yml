@@ -28,6 +28,12 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # Static guard: audit_events is append-only (AUDIT_TDD 10, AUDIT_PRD 7,
+      # acceptance criterion 9). Fails on any UPDATE/DELETE against the table
+      # under api/src or api/drizzle; the test harness under api/test is exempt.
+      - name: Check audit_events is append-only
+        run: sh scripts/check-audit-append-only.sh
+
       # Every secret reaches the shell only through env: and is referenced as a
       # quoted "$VAR"; no secrets expression is expanded inside a run string. This
       # step checks the shape of every value used below BEFORE any sed edits

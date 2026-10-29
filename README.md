@@ -67,7 +67,14 @@ npm test                               # run the test suite
 npx tsc --noEmit -p test/tsconfig.json # typecheck the tests
 ```
 
-The PRD acceptance tests for the [MCP server](#mcp-server) are in `api/test/acceptance.test.ts`. The checks that need live clients or production Cloudflare (claude.ai, Gemini Spark, a real Access service token, latency from Anthropic and Google networks) can't run offline. They are listed as manual steps in the comment at the bottom of that file.
+The PRD acceptance tests for the [MCP server](#mcp-server) are in `api/test/acceptance.test.ts`. The checks that need live clients or production Cloudflare (claude.ai, Gemini Spark, a real Access service token, latency from Anthropic and Google networks) can't run offline. They are listed as manual steps in the comment at the bottom of that file. The acceptance tests for [Activity history](#activity-history) are in `api/test/audit.acceptance.test.ts`; the two UI checks (no Activity section for Viewers, "via <client>" on MCP edits) are manual and listed in `specs/AUDIT_TDD.md` section 11.1.
+
+```bash
+cd api
+npm run check:audit                    # audit_events must stay append-only
+```
+
+`check:audit` runs `api/scripts/check-audit-append-only.sh`, a textual scan of `api/src` and `api/drizzle` that fails on any `UPDATE`, `DELETE`, `DROP TABLE` or `TRUNCATE` against `audit_events`, in SQL or through Drizzle. The API deploy workflow runs the same script as its first step after `npm ci`, before the secrets are validated. The test harness under `api/test` is not scanned.
 
 ## Roles & Permissions
 
@@ -99,7 +106,7 @@ All trip content is stored in a single `itineraries` table with type-specific JS
 - **Transport** — buses, ferries, shuttles
 - **Activity** — events with location and time
 
-Other tables: `trips`, `participants`, `users`, `expenses`, `documents`, `invites`, `service_identities`.
+Other tables: `trips`, `participants`, `users`, `expenses`, `documents`, `invites`, `service_identities`, and the append-only `audit_events` (see [Activity history](#activity-history)).
 
 ## API
 
@@ -114,12 +121,14 @@ Key endpoint groups:
 - `GET/POST/DELETE /trips/:tripId/invites` — invite management (owners only)
 - `GET/POST/PUT/DELETE /trips/:tripId/expenses` — expense tracking
 - `GET/POST/PUT/DELETE /trips/:tripId/documents` — document attachments
+- `GET /trips/:tripId/audit` | `/trips/:tripId/audit/:entityType/:entityId` — change history (editors and owners; see [Activity history](#activity-history))
 - `GET/POST/PUT/DELETE /admin/*` — user & service identity management (admins only)
+- `GET /admin/audit` — change history across all trips and administration (admins only)
 - `/mcp` — MCP server for AI agents (see [MCP server](#mcp-server))
 
 ### Behavior changes
 
-Three REST behaviors changed on purpose. The first two came with moving trip, itinerary and expense logic into a shared service layer (`api/src/services/`); the third came with the MCP server's hardening. All other responses are unchanged.
+Seven REST behaviors changed on purpose. The first two came with moving trip, itinerary and expense logic into a shared service layer (`api/src/services/`); the third came with the MCP server's hardening; the last four came with [Activity history](#activity-history), which moved the remaining write paths (participants, documents, invites, users) into the same service layer. All other responses are unchanged.
 
 **Non-members get 404 from itinerary reads.** Before, a signed-in user who was not a participant of a trip could read that trip's itineraries if they knew the trip id. They got `200` with the viewer projection. Now a non-admin who is not a participant gets `404`:
 
@@ -133,6 +142,47 @@ This also applies when a non-admin requests a trip id that does not exist. The l
 **Creating a trip adds the creator as Owner.** `POST /trips` now inserts a `participants` row for the creator (`userId`, `email`, `name`, role `Owner`, not traveling) in the same batch as the trip, so both rows are written or neither is. This applies to admins too. The `201` response body is the same trip object as before. As a result, a non-admin creator can now see, edit and delete the trip they created, and the trip shows up in their trip list. Before, they were not a participant and could not read it back. Global viewers still get `403` and nothing is written.
 
 **Account-link errors no longer echo internal messages.** `POST /auth/me/link` and `POST /auth/link` used to return the exception text in a `500` body. They now always return `500` `{"error":"Internal server error"}`, and the detail is logged on the server only. `POST /auth/link/:token/confirm` still answers with its generic HTML error page. When the token's owner no longer exists, all three now answer as for an unknown token (`404` `{"error":"Token not found or already used"}`, or the "Link Not Found" page) before anything is changed.
+
+**A no-op `PUT` no longer bumps `updatedAt`.** `PUT /trips/:tripId`, `PUT /trips/:tripId/itineraries/:itineraryId`, `PUT /trips/:tripId/expenses/:expenseId`, `PUT /trips/:tripId/participants/:participantId`, `PUT /trips/:tripId/documents/:documentId`, `PUT /admin/users/:userId` and `PUT /auth/me` compare the request with the stored row first. When nothing changes, nothing is written: no history entry, `updatedAt` untouched, and the response is the stored row with `200` as before. The MCP `update_itinerary` tool behaves the same way.
+
+**Non-members get `404` from participant and document lists.** `GET /trips/:tripId/participants` used to return the full list to any signed-in user who knew the trip id. It now answers `404` `{"error":"Trip not found"}` for a non-admin who is not a participant, the same as the itinerary endpoints above. `GET /trips/:tripId/documents` already returned `404` and is unchanged. Participants and admins are unaffected.
+
+**Account merge and invite acceptance are atomic.** `POST /admin/users/merge`, the three account-link routes (`POST /auth/me/link`, `POST /auth/link`, `POST /auth/link/:token/confirm`) and `POST /auth/invite/:token/accept` used to run their writes one statement at a time, so a failure half-way left a partly merged or partly accepted account. Each now reads first and then runs every write in one D1 batch, together with its history entry, so all of it is written or none of it is. Responses are unchanged.
+
+**`POST /admin/users/merge` returns `500` on unexpected failure.** It used to return `404` with the internal error text for any failure. Now `404` `{"error":"User not found"}` means exactly that one of the two users does not exist; anything else is `500` `{"error":"Internal server error"}`, with the detail logged on the server only. `400` for merging a user with themselves is unchanged.
+
+Two new migrations, `0011_audit_events.sql` and `0012_audit_client_name.sql`, must be applied before the new code runs. The deploy workflow's **Run Migrations** step does this (`wrangler d1 migrations apply trips-db --remote`); locally, run `npm run db:migrate:local`. The table starts empty and the old code ignores it, so the migrations can go out ahead of the deploy.
+
+## Activity history
+
+Every create, update and delete of trip data is recorded in an append-only history: who made the change, through which channel, when, and the field-level before and after values. Rows in `audit_events` are only ever inserted, never updated or deleted, and they carry no foreign keys, so the history of a trip or user survives deleting that trip or user. Rows that existed before this feature shipped have no history until they are first edited; a backfill of synthetic "created" entries is an open decision in `specs/AUDIT_PRD.md` section 11 and there is no backfill script.
+
+**What is recorded.** Trips, itinerary items, expenses, participants, documents and invites (created, changed, deleted, and for invites, accepted). Deleting a trip records one entry for the trip with a snapshot of the trip row and the counts of deleted items; the deleted items are not recorded one by one. Administration is recorded too, visible only to admins: users (created, changed, deleted, merged, including a user editing their own name), email addresses (linked, unlinked, made primary), service identities (created, deleted), OAuth clients (created, deleted) and connected-app grants (revoked). Snapshots copy only an allow-list of columns per entity type (`SNAPSHOT_COLUMNS` in `api/src/services/audit.ts`): confirmation numbers, ticket numbers and document URLs are included; password hashes, invite and link tokens, OAuth tokens and client secrets never are. Each entry keeps the actor's name and email as they were at the time, so it still reads correctly after the user is renamed, merged or deleted.
+
+**Who can see it.** Editors and Owners of a trip, and admins. Viewers never see history: the Activity section and the History buttons are not rendered for them, and the API refuses them independently with `403`. There is no MCP tool for reading history.
+
+**Trip page.** An **Activity** section at the bottom of the trip page, collapsed by default. Open it to see the trip's entries newest first, with filters for **Person** (participants who have an account), **Item type** (trip, itinerary item, expense, participant, document, invite) and a **From**/**To** date range, and a **Load more** button at the end of each page. Each itinerary card and each participant row also has a **History** button that opens the same list for that one item. The section reloads after any edit made on the page.
+
+**What an entry shows.** A sentence such as "Alice changed Flight UA123 SFO to NRT leg 1 departure time from Apr 10, 8:30 AM to Apr 10, 9:45 AM" or "Carol deleted participant Dave". Expanding an entry lists every changed field with its old and new value; for a create or delete it lists the item's fields instead. The footer of an expanded entry shows the actor's email and the channel (Web, MCP (OAuth), MCP (service token), Service token, Dev).
+
+**Edits made through Claude or another MCP client** are attributed to the person the client was acting for, and the entry carries a **via `<client name>`** badge: the OAuth client's registered name (for example "Claude") in Stage 2, or the service token's common name in Stage 1 and for a service token calling the REST API. A client registered without a name shows its client id instead. The MCP write tools (`create_trip`, `create_itinerary`, `update_itinerary`, `add_expense`) go through the same service functions as the REST routes, so their entries are identical to REST entries except for the channel and client.
+
+**Admin page.** An **Audit log** section after OAuth clients lists every entry across all trips, newest first, including administration entries and entries for trips that no longer exist. Filters: **Trip id** (a UUID), **Person**, **Channel**, **Client id**, **Entity type**, **Action**, **From** and **To**. An expanded row also shows the raw `before`, `after`, `changes` and `metadata` JSON and the Cloudflare `requestId` (the request's `cf-ray`), which only admins receive.
+
+### History endpoints
+
+All three return the same page shape, `{ "events": [...], "nextCursor": "<opaque>" | null }`, newest first. They are in the OpenAPI document at `/docs`.
+
+| Endpoint | Who | Query parameters |
+|---|---|---|
+| `GET /api/trips/{tripId}/audit` | Editor or Owner on the trip, or admin | `cursor`, `limit`, `entityType`, `entityId`, `actorUserId`, `action`, `since`, `until` |
+| `GET /api/trips/{tripId}/audit/{entityType}/{entityId}` | Editor or Owner on the trip, or admin | `cursor`, `limit`, `actorUserId`, `action`, `since`, `until` |
+| `GET /api/admin/audit` | admin | all of the above plus `tripId`, `channel`, `clientId` |
+
+- **Pagination.** `limit` is the page size: default 50, maximum 200 (a larger or non-integer value is `400`). When more rows remain, `nextCursor` is set; pass it back as `cursor` to get the next page. The cursor is opaque and encodes the position in the log, so pages don't repeat or skip rows while new entries arrive. A malformed cursor is `400` `{"error":"Invalid cursor"}`.
+- **Filters.** `entityType` is one of `trip`, `itinerary`, `expense`, `participant`, `document`, `invite`, `user`, `user_email`, `service_identity`, `oauth_grant`, `oauth_client`. `action` is one of `create`, `update`, `delete`, `accept`, `merge`, `link`, `unlink`, `set_primary`, `revoke`. `since` and `until` are ISO 8601 timestamps with a time zone (a bare date is `400`), inclusive on `createdAt`. `channel` is one of `web`, `service_token`, `mcp_stage1`, `mcp_oauth`, `dev`. The two trip endpoints only ever return that trip's entries, whatever filters are passed; administration entries have no trip and are reachable only through `/api/admin/audit`.
+- **Status codes.** A Viewer on the trip gets `403` `{"error":"Forbidden"}`. A non-admin who is not a participant gets `404` `{"error":"Trip not found"}`, the same as for a trip that does not exist. A non-admin on `/api/admin/audit` gets `403`. Admins are treated as Owner on every trip with no existence check, so they can read a deleted trip's history through either the trip endpoint or `/api/admin/audit`.
+- **Event fields.** `id`, `createdAt`, `actorUserId` (kept after the user is deleted; null only for imported rows), `actorName`, `actorEmail`, `actorRole`, `channel`, `clientId`, `clientName`, `tripId` (null for administration entries), `entityType`, `entityId`, `entityLabel`, `action`, `before`, `after`, `changes` (`{ "<path>": { "from"?, "to"? } }`; a missing side means the path did not exist) and `metadata`. `requestId` is present only on `/api/admin/audit`.
 
 ## MCP server
 
@@ -186,6 +236,8 @@ Read tools carry the MCP annotation `readOnlyHint: true`. All tools set `destruc
 On the MCP hostname, `/authorize`, `/callback`, `/oauth/token` and `/oauth/register` are also limited to 30 requests per 60 seconds per IP address (`cf-connecting-ip`), through the `OAUTH_RATE_LIMITER` binding. Over the limit, these paths answer `429` `{"error":"Too many requests"}`. The `/.well-known/` metadata is not rate-limited.
 
 ### Audit log
+
+This is the Worker request log. The data changes a tool makes are also recorded in the [Activity history](#activity-history), with the channel and client name.
 
 Every tool call writes one line to the Worker logs (Workers observability is enabled in `wrangler.toml`):
 

@@ -215,6 +215,9 @@ function ActivityRow({ event, open, onToggle, showTrip, showRaw }: RowProps) {
             <pre className="mt-3 max-h-96 overflow-auto rounded bg-gray-50 p-3 text-xs text-gray-700">
               {JSON.stringify(
                 {
+                  channel: event.channel,
+                  clientId: event.clientId,
+                  clientName: event.clientName,
                   before: event.before,
                   after: event.after,
                   changes: event.changes,

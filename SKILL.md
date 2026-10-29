@@ -18,7 +18,7 @@ There is no `/auth/login` endpoint. Authentication is handled entirely by Cloudf
 
 **OpenAPI Spec:** Available at `GET /openapi.json` for full schema details. Interactive docs at `GET /docs`. See the [OpenAPI Documentation](#openapi-documentation) section below for usage details.
 
-**MCP alternative:** The same trip, itinerary and expense capabilities are also available as MCP tools, with the same roles and Viewer projection. Use `/api/mcp` on the app host with a Cloudflare Access service token (Stage 1), or `${MCP_PUBLIC_URL}` with OAuth sign-in (Stage 2). The MCP tools can't delete anything and don't cover participants, invites or documents. See [MCP server](README.md#mcp-server) for the tools and connection steps.
+**MCP alternative:** The same trip, itinerary and expense capabilities are also available as MCP tools, with the same roles and Viewer projection. Use `/api/mcp` on the app host with a Cloudflare Access service token (Stage 1), or `${MCP_PUBLIC_URL}` with OAuth sign-in (Stage 2). The MCP tools can't delete anything and don't cover participants, invites, documents or change history. See [MCP server](README.md#mcp-server) for the tools and connection steps.
 
 ## Core Capabilities
 
@@ -320,7 +320,7 @@ DELETE /trips/:tripId/itineraries/:itineraryId       — Delete itinerary
 ### Participants
 
 ```
-GET    /trips/:tripId/participants                         — List participants
+GET    /trips/:tripId/participants                         — List participants (404 if not a participant)
 POST   /trips/:tripId/participants                         — Add participant
 PUT    /trips/:tripId/participants/:participantId           — Update participant
 DELETE /trips/:tripId/participants/:participantId           — Remove participant
@@ -388,6 +388,55 @@ DELETE /trips/:tripId/documents/:documentId               — Delete document
   "reservationId": "itinerary-uuid (optional)"
 }
 ```
+
+### Change History
+
+```
+GET    /trips/:tripId/audit                                — Trip history, newest first (editors and owners only)
+GET    /trips/:tripId/audit/:entityType/:entityId          — History of one item on the trip (editors and owners only)
+GET    /admin/audit                                        — History across all trips and administration (admins only)
+```
+
+Every create, update and delete you make through the API is recorded with your user as the actor, the channel (`service_token` for a Cloudflare Access service token, `web` for a browser session, `dev` with the dev header) and, for service tokens, the token's common name as `clientId` and `clientName`. Nothing you do is hidden from trip editors, so confirm changes with the user before making them. A `PUT` that re-sends the stored values unchanged records nothing.
+
+**Who can read it:** trip Editors and Owners, and admins. A Viewer on the trip gets `403`; a user who is not a participant gets `404`, as for the trip itself. `/admin/audit` is `403` for non-admins.
+
+**Query parameters:** `cursor`, `limit` (default 50, max 200), `actorUserId`, `action`, `since`, `until` (ISO 8601 timestamps with a time zone, inclusive). The trip endpoint also takes `entityType` and `entityId`; the admin endpoint also takes `tripId`, `channel` and `clientId`.
+
+**Entity types:** `trip`, `itinerary`, `expense`, `participant`, `document`, `invite`, `user`, `user_email`, `service_identity`, `oauth_grant`, `oauth_client`
+
+**Actions:** `create`, `update`, `delete`, `accept`, `merge`, `link`, `unlink`, `set_primary`, `revoke`
+
+**Page response:**
+```json
+{
+  "events": [
+    {
+      "id": "uuid",
+      "createdAt": "2026-04-10T08:30:00.000Z",
+      "actorUserId": "uuid",
+      "actorName": "Jane Doe",
+      "actorEmail": "jane@example.com",
+      "actorRole": "editor",
+      "channel": "service_token",
+      "clientId": "<token common_name>",
+      "clientName": "<token common_name>",
+      "tripId": "uuid",
+      "entityType": "itinerary",
+      "entityId": "uuid",
+      "entityLabel": "United Airlines UA123 SFO to NRT",
+      "action": "update",
+      "before": { "...": "allow-listed columns before the change" },
+      "after": { "...": "allow-listed columns after the change" },
+      "changes": { "content.legs[0].departureTime": { "from": "2026-04-10T08:30:00", "to": "2026-04-10T09:45:00" } },
+      "metadata": null
+    }
+  ],
+  "nextCursor": "opaque-or-null"
+}
+```
+
+`before` is null for `create`, `after` is null for `delete`, and `changes` is set only for `update`. A missing `from` or `to` in a change means the path did not exist on that side. Pass `nextCursor` back as `cursor` for the next page; a malformed cursor is `400`. Use the item history endpoint to answer "who changed this flight?" and the trip endpoint to summarize recent changes.
 
 ## OpenAPI Documentation
 
