@@ -9,11 +9,11 @@ compatibility_date = "2025-01-01"
 # origin directly. nodejs_compat is not needed (spike 1).
 compatibility_flags = ["global_fetch_strictly_public"]
 
-# The MCP hostname route (Stage 2) is not committed. The deploy workflow
-# replaces the MCP_ROUTE_PLACEHOLDER comment line below with
-#   { pattern = "<mcp-host>/*", zone_name = "<zone>" },
-# only when the MCP_HOST and MCP_ZONE_NAME repository secrets are set.
-# Without them the line stays a comment and no MCP route is deployed.
+# The MCP hostname (Stage 2) is not committed. The deploy workflow replaces
+# the MCP_ROUTE_PLACEHOLDER comment line below with the Custom Domain
+#   { pattern = "<mcp-host>", custom_domain = true },
+# only when the MCP_HOST repository secret is set. Cloudflare then creates
+# the DNS record and certificate. Without it the line stays a comment.
 routes = [
   { pattern = "trips.prenticew.com/api/*", zone_name = "prenticew.com" },
   # MCP_ROUTE_PLACEHOLDER

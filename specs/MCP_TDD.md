@@ -376,8 +376,10 @@ Web UI: the admin page gains a "Connected apps" table with a revoke action per r
 ```toml
 routes = [
   { pattern = "<app-host>/api/*", zone_name = "<zone>" },
-  { pattern = "<mcp-host>/*",      zone_name = "<zone>" },
+  { pattern = "<mcp-host>", custom_domain = true },   # injected by the deploy workflow from MCP_HOST
 ]
+# (amended 2026-10-28) The MCP hostname is a Workers Custom Domain, not a zone route: Cloudflare
+# creates its DNS record and certificate, so no placeholder record and no MCP_ZONE_NAME are needed.
 
 compatibility_flags = ["global_fetch_strictly_public"]   # required when CIMD is enabled (verified by spike 2026-10-27; no nodejs_compat needed)
 

@@ -27,19 +27,19 @@ No new DNS record, Worker route, KV namespace, GitHub secret, or Worker secret.
 
 0. **Secret formats are validated before every deploy** (step "Validate Deploy Secrets"; failures print `::error::<SECRET NAME> ...` and never the value). Check these before merging:
    - `CLOUDFLARE_D1_DATABASE_ID` is a standard UUID; `CLOUDFLARE_KV_OAUTH_ID` is 32 lowercase hex characters.
-   - `MCP_HOST` and `MCP_ZONE_NAME` are bare hostnames (they are lowercased); `MCP_HOST` equals the zone or is a subdomain of it.
+   - `MCP_HOST` is a bare hostname (it is lowercased) in a zone on this Cloudflare account. `MCP_ZONE_NAME` is no longer used; delete it if you set it.
    - `MCP_PUBLIC_URL` is exactly `https://<MCP_HOST in lowercase>/mcp`, and is not set while `MCP_HOST` is empty.
    - Each `ACCESS_*` URL starts with `https://` and has no whitespace, quotes or backslashes.
    - The deploy step now runs `npx wrangler deploy` directly (with `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` from env) instead of `wrangler-action`; migrations still use `wrangler-action`.
 1. **KV namespace:** `npx wrangler kv namespace create OAUTH_KV` (or create it in the dashboard). Record the id.
 2. **GitHub secret `CLOUDFLARE_KV_OAUTH_ID`:** set it to that id.
-3. **DNS:** add a proxied record for `<mcp-host>` in `<zone>` (for example `AAAA` → `100::`, as usual for Worker-only hostnames).
+3. **DNS: do not add a record.** The deploy attaches `<mcp-host>` as a Workers Custom Domain, which creates the proxied DNS record and the certificate. If a record for `<mcp-host>` already exists, delete it first, or the deploy fails. The deploy's `CLOUDFLARE_API_TOKEN` must be allowed to manage Workers Custom Domains and DNS on that zone (for example *Zone → Workers Routes: Edit* and *Zone → DNS: Edit*); if it is not, the first Stage 2 deploy fails with an authorization error.
 4. **Access for SaaS app (OIDC):** Zero Trust → Access → Applications → Add → SaaS → OIDC.
    - Redirect URL: `https://<mcp-host>/callback`.
    - Attach the same External Evaluation rule as the main Trips application.
    - Record the client id, client secret, authorization endpoint, token endpoint, JWKS endpoint and issuer.
 5. **No Access app may match `<mcp-host>`:** no self-hosted Access application, wildcards included, may cover the MCP hostname. The OAuth endpoints, `/.well-known/*` and `/mcp` must reach the Worker without an Access challenge.
-6. **Worker route:** do not add it in the dashboard. Set GitHub secrets `MCP_HOST` (the bare `<mcp-host>`) and `MCP_ZONE_NAME` (`<zone>`); the workflow inserts `<mcp-host>/*` on deploy.
+6. **Custom Domain:** do not add it in the dashboard. Set the GitHub secret `MCP_HOST` (the bare `<mcp-host>`); the workflow inserts `{ pattern = "<mcp-host>", custom_domain = true }` on deploy.
 7. **Other GitHub secrets** (all required once `MCP_HOST` is set; the workflow fails otherwise):
    - `MCP_PUBLIC_URL` = `https://<mcp-host>/mcp`. It must exactly equal the URL users enter in Claude or Gemini.
    - `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` from step 4.
@@ -52,7 +52,7 @@ No new DNS record, Worker route, KV namespace, GitHub secret, or Worker secret.
 8b. **WAF / Bot settings:** make sure Bot Fight Mode, managed challenges and WAF rules do not challenge `/.well-known/*`, `/oauth/token`, `/oauth/register` or `/mcp` on `<mcp-host>` for Anthropic and Google egress ranges. Those clients cannot solve challenges.
 8c. **`MCP_PUBLIC_URL` format:** lowercase, no trailing slash, exactly `https://<mcp-host>/mcp`.
 9. **Rate limiter:** nothing to create. `OAUTH_RATE_LIMITER` (namespace `1003`, 30 per 60 s per IP) takes effect on deploy.
-10. **Disable or roll back Stage 2:** delete the `MCP_HOST` secret and redeploy. The var becomes empty, no MCP route is added, and the dispatcher stays off.
+10. **Disable or roll back Stage 2:** delete the `MCP_HOST` secret and redeploy. The var becomes empty and the dispatcher stays off. Then remove `<mcp-host>` under Workers → the API Worker → Settings → Domains & Routes, so the Custom Domain and its DNS record go away (a deploy without it in `routes` may not detach it).
 
 ## Stage 2: static OAuth client for Gemini Spark (only if Gemini asks for a client ID and secret)
 

@@ -78,3 +78,10 @@ One line per agent invocation: phase | agent | target | outcome | follow-ups.
 - 4.5 | mcp-security-reviewer | phase-4 re-review | GO. L1–L6 fixed with tests; new Info: output guard skips schemas without ~standard (unreachable today; recorded) ; pre-existing hard-coded hostnames/CF Access values noted (out of scope).
 - 4.6 | orchestrator | checklist | Added manual post-deploy verification, accepted risks, pre-existing hard-coded config; fixed KV warning step name.
 - GATE 4 | orchestrator | gate | PASS: npm test 512/512 incl. 15 PRD 11 acceptance tests; tsc clean (src + test); web build OK, lint 5 pre-existing; reviewer GO, no medium+ open; README/SKILL verified against code; operator checklist complete.
+
+## Post-gate change (2026-10-28): MCP hostname as a Workers Custom Domain
+
+- Operator request: attach the MCP hostname as a Custom Domain instead of a zone route plus a placeholder DNS record, without committing the hostname.
+- `deploy-api.yml` now injects `{ pattern = "<MCP_HOST>", custom_domain = true }` from the `MCP_HOST` secret. `MCP_ZONE_NAME` was removed (validation, injection and docs).
+- Verified: `wrangler deploy --dry-run` accepts the injected entry; the validation step was run with valid, malformed and empty inputs; 512 tests pass; `tsc` is clean.
+- README, operator checklist (no DNS record, token permissions, disable steps) and TDD 8.1 updated.

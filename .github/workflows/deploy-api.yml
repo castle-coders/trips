@@ -39,7 +39,6 @@ jobs:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
           MCP_HOST: ${{ secrets.MCP_HOST }}
-          MCP_ZONE_NAME: ${{ secrets.MCP_ZONE_NAME }}
           MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
           ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
           ACCESS_TOKEN_URL: ${{ secrets.ACCESS_TOKEN_URL }}
@@ -71,23 +70,15 @@ jobs:
 
           host_re='^[a-z0-9.-]+$'
           host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
-          zone="$(printf '%s' "$MCP_ZONE_NAME" | tr 'A-Z' 'a-z')"
           if [ -n "$host" ]; then
             # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
             missing=""
-            for name in MCP_ZONE_NAME MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+            for name in MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
               [ -n "$(printenv "$name" || true)" ] || missing="$missing $name"
             done
             [ -z "$missing" ] || err "MCP_HOST is set but these repository secrets are not:$missing"
 
             [[ "$host" =~ $host_re ]] || err "Repository secret MCP_HOST must be a bare hostname matching ^[a-z0-9.-]+\$ (no scheme, port, path or whitespace)."
-            if [ -n "$zone" ]; then
-              if ! [[ "$zone" =~ $host_re ]]; then
-                err "Repository secret MCP_ZONE_NAME must match ^[a-z0-9.-]+\$."
-              elif [ "$host" != "$zone" ] && [ "${host%."$zone"}" = "$host" ]; then
-                err "Repository secret MCP_HOST is not inside the zone named by MCP_ZONE_NAME."
-              fi
-            fi
             # The OAuth resource id must be exactly https://<lowercased MCP_HOST>/mcp.
             if [ -n "$MCP_PUBLIC_URL" ] && [ "$MCP_PUBLIC_URL" != "https://$host/mcp" ]; then
               err "Repository secret MCP_PUBLIC_URL must equal https://<MCP_HOST in lowercase>/mcp exactly."
@@ -111,22 +102,21 @@ jobs:
           sed -i "s/OAUTH_KV_ID_PLACEHOLDER/${KV_OAUTH_ID}/g" wrangler.toml
           grep -qF "id = \"${KV_OAUTH_ID}\"" wrangler.toml || { echo "::error::OAUTH_KV id injection failed"; exit 1; }
 
-      # MCP hostname route (Stage 2). Added only when MCP_HOST is set; otherwise
-      # the placeholder stays a TOML comment and no MCP route is deployed.
-      # Host and zone are lowercased and validated (^[a-z0-9.-]+$) above.
-      - name: Inject MCP Hostname Route
+      # MCP hostname (Stage 2), attached as a Workers Custom Domain so Cloudflare
+      # creates the DNS record and certificate itself. Added only when MCP_HOST
+      # is set; otherwise the placeholder stays a TOML comment. The host is
+      # lowercased and validated (^[a-z0-9.-]+$) above.
+      - name: Inject MCP Custom Domain
         env:
           MCP_HOST: ${{ secrets.MCP_HOST }}
-          MCP_ZONE_NAME: ${{ secrets.MCP_ZONE_NAME }}
         run: |
           host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
-          zone="$(printf '%s' "$MCP_ZONE_NAME" | tr 'A-Z' 'a-z')"
           if [ -z "$host" ]; then
-            echo "MCP_HOST not set; skipping the MCP hostname route (Stage 2 stays disabled)."
+            echo "MCP_HOST not set; skipping the MCP custom domain (Stage 2 stays disabled)."
             exit 0
           fi
-          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${host}/*\", zone_name = \"${zone}\" },|" wrangler.toml
-          grep -qF "{ pattern = \"${host}/*\", zone_name = \"${zone}\" }," wrangler.toml || { echo "::error::MCP route injection failed"; exit 1; }
+          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${host}\", custom_domain = true },|" wrangler.toml
+          grep -qF "{ pattern = \"${host}\", custom_domain = true }," wrangler.toml || { echo "::error::MCP custom domain injection failed"; exit 1; }
 
       - name: Run Migrations
         uses: cloudflare/wrangler-action@v3

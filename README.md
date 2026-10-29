@@ -389,14 +389,14 @@ These steps turn on Stage 2 of the [MCP server](#mcp-server). Nothing is created
    ```
 
 2. **GitHub secret `CLOUDFLARE_KV_OAUTH_ID`** set to that id.
-3. **DNS.** Add a proxied record for `<mcp-host>` in `<zone>` (for a Worker-only hostname, for example `AAAA` → `100::`).
+3. **DNS: nothing to add.** The deploy attaches `<mcp-host>` to the Worker as a Workers Custom Domain, and Cloudflare creates the DNS record and certificate. The hostname must be in a zone on this account and must **not** already have a DNS record; delete any existing one first, or the deploy fails.
 4. **Access for SaaS OIDC application.** Zero Trust → Access → Applications → Add → SaaS → OIDC:
    - Redirect URL: `https://<mcp-host>/callback`.
    - Scopes `openid email`; turn PKCE on if offered (the Worker sends `S256` and the client secret).
    - Policy: the same **External Evaluation** rule as the "Trips" application.
    - Note its client ID, client secret, authorization endpoint, token endpoint, JWKS endpoint and issuer.
 5. **Verify that no Access application matches `<mcp-host>`.** Check every self-hosted application, wildcards included. `/mcp`, `/authorize`, `/oauth/*`, `/callback` and `/.well-known/*` must reach the Worker without an Access challenge. Also make sure Bot Fight Mode, managed challenges and WAF rules don't challenge them: Claude and Gemini can't solve challenges.
-6. **Worker route.** Don't add it in the dashboard. Set the GitHub secrets `MCP_HOST` (bare `<mcp-host>`) and `MCP_ZONE_NAME` (`<zone>`), and the deploy workflow adds the `<mcp-host>/*` route.
+6. **Custom Domain.** Don't add it in the dashboard. Set the GitHub secret `MCP_HOST` (bare `<mcp-host>`), and the deploy workflow adds `{ pattern = "<mcp-host>", custom_domain = true }` to `routes`.
 7. **Other GitHub secrets**, all required once `MCP_HOST` is set: `MCP_PUBLIC_URL` (exactly `https://<mcp-host>/mcp`, lowercase, no trailing slash), `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL` and `ACCESS_ISSUER` from step 4. The deploy checks their format first (see [Deployment](#deployment)).
 8. **Worker secrets** (see [Worker secrets](#worker-secrets)): `ACCESS_CLIENT_ID` and `ACCESS_CLIENT_SECRET` from step 4.
 9. **Deploy and verify.** Push to `main` (or re-run the workflow), then connect a client (see [Connecting (Stage 2: OAuth)](#connecting-stage-2-oauth)) and call `get_me`.
@@ -486,12 +486,11 @@ GitHub Actions secrets required:
 | `CLOUDFLARE_D1_DATABASE_ID` | D1 database ID (injected into `wrangler.toml` at deploy time) |
 | `BOOTSTRAP_ADMIN_EMAIL` | Passed as a var override during API deploy |
 | `CLOUDFLARE_KV_OAUTH_ID` | `OAUTH_KV` namespace ID (injected into `wrangler.toml` at deploy time). **Required**: the API deploy fails without it |
-| `MCP_HOST` | MCP Stage 2. Bare `<mcp-host>`. When set, the workflow adds the `<mcp-host>/*` Worker route and passes it as a var. Leave unset to keep Stage 2 off |
-| `MCP_ZONE_NAME` | MCP Stage 2. Zone of the MCP hostname, used for the route |
+| `MCP_HOST` | MCP Stage 2. Bare `<mcp-host>`. When set, the workflow attaches it as a Workers Custom Domain and passes it as a var. Leave unset to keep Stage 2 off |
 | `MCP_PUBLIC_URL` | MCP Stage 2. Passed as a var |
 | `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` | MCP Stage 2. Passed as vars |
 
-Stage 2 is all or nothing: when `MCP_HOST` is set, the workflow fails unless `MCP_ZONE_NAME`, `MCP_PUBLIC_URL` and the four `ACCESS_*` secrets are set too. `ACCESS_CLIENT_ID` and `ACCESS_CLIENT_SECRET` are Worker secrets, not GitHub secrets (see [Worker secrets](#worker-secrets)).
+Stage 2 is all or nothing: when `MCP_HOST` is set, the workflow fails unless `MCP_PUBLIC_URL` and the four `ACCESS_*` secrets are set too. `ACCESS_CLIENT_ID` and `ACCESS_CLIENT_SECRET` are Worker secrets, not GitHub secrets (see [Worker secrets](#worker-secrets)).
 
 The workflow's first step after `npm ci`, **Validate Deploy Secrets**, checks the format of every secret before anything edits `wrangler.toml`. Errors name the secret, never its value:
 
@@ -499,7 +498,7 @@ The workflow's first step after `npm ci`, **Validate Deploy Secrets**, checks th
 |---|---|
 | `CLOUDFLARE_D1_DATABASE_ID` | Required. A UUID |
 | `CLOUDFLARE_KV_OAUTH_ID` | Required. 32 lowercase hex characters |
-| `MCP_HOST`, `MCP_ZONE_NAME` | Bare hostnames: after lowercasing, only `a-z`, `0-9`, `.` and `-`. `MCP_HOST` must be the zone itself or a subdomain of it |
+| `MCP_HOST` | Bare hostname: after lowercasing, only `a-z`, `0-9`, `.` and `-` |
 | `MCP_PUBLIC_URL` | Exactly `https://<MCP_HOST in lowercase>/mcp`. Must be empty when `MCP_HOST` is empty |
 | `ACCESS_AUTHORIZATION_URL`, `ACCESS_TOKEN_URL`, `ACCESS_JWKS_URL`, `ACCESS_ISSUER` | When set, start with `https://` and contain no whitespace, quotes or backslashes |
 
@@ -512,7 +511,7 @@ cd api
 npm run deploy
 ```
 
-A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first. If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with the MCP route and pass the Stage 2 vars with `--var`, as the workflow does.
+A manual deploy uses `wrangler.toml` as committed, so replace `PROD_DB_ID_PLACEHOLDER` and `OAUTH_KV_ID_PLACEHOLDER` first. If Stage 2 is on, also replace the `# MCP_ROUTE_PLACEHOLDER` line with `{ pattern = "<mcp-host>", custom_domain = true },` and pass the Stage 2 vars with `--var`, as the workflow does.
 
 ## Tech Stack
 
