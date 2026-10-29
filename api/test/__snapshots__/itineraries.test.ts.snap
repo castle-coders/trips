@@ -1,0 +1,1269 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DELETE /trips/:tripId/itineraries/:itineraryId > admin 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/itineraries/:itineraryId > editor 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/itineraries/:itineraryId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`DELETE /trips/:tripId/itineraries/:itineraryId > owner 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/itineraries/:itineraryId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries > admin gets the full projection (snapshot) 1`] = `
+[
+  {
+    "confirmationNumber": "CONF-FAKE-ACT",
+    "content": {
+      "location": "Testville",
+      "name": "Museum",
+      "startTime": "2090-03-02T10:00",
+      "startTimeTz": "Europe/Paris",
+    },
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "id": "<it:activity>",
+    "notes": "Bring ID",
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": 25,
+    "tripId": "<trip>",
+    "type": "Activity",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-FLT",
+    "content": {
+      "legs": [
+        {
+          "airline": "Test Air",
+          "arrivalAirport": "BBB",
+          "arrivalTime": "2030-01-10T17:00",
+          "arrivalTimeTz": "America/New_York",
+          "departureAirport": "AAA",
+          "departureTime": "2030-01-10T09:00",
+          "departureTimeTz": "America/Los_Angeles",
+          "flightNumber": "TA100",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "12A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Test Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-0001",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:flight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-OLD",
+    "content": {
+      "legs": [
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "DDD",
+          "arrivalTime": "2090-03-01T11:00",
+          "arrivalTimeTz": "Europe/Paris",
+          "departureAirport": "CCC",
+          "departureTime": "2090-03-01T08:00",
+          "departureTimeTz": "Europe/London",
+          "fareClass": "Economy",
+          "flightNumber": "LA1",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "3C",
+            },
+          ],
+        },
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "EEE",
+          "arrivalTime": "2090-03-01T15:00",
+          "departureAirport": "DDD",
+          "departureTime": "2090-03-01T13:00",
+          "fareClass": "Business",
+          "flightNumber": "LA2",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "1A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Legacy Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-OLD1",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:oldFlight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-RAIL",
+    "content": {
+      "arrivalStation": "Beta",
+      "arrivalTime": "2090-03-03T12:00",
+      "departureStation": "Alpha",
+      "departureTime": "2090-03-03T09:00",
+      "seatAssignments": [
+        {
+          "carriageNumber": "7",
+          "participantId": "<editorP>",
+          "seatNumber": "44",
+        },
+      ],
+      "trainNumber": "FR9",
+      "trainOperator": "Fake Rail",
+      "travelers": [
+        {
+          "name": "Rail Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-RAIL",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:rail>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Pending",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Rail",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": null,
+    "content": {
+      "checkInDate": "2090-03-01",
+      "checkInTime": "15:00",
+      "checkOutDate": "2090-03-08",
+      "checkOutTime": "11:00",
+      "propertyName": "Fake Inn",
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:lodging>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Lodging",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/itineraries > editor gets the full projection (snapshot) 1`] = `
+[
+  {
+    "confirmationNumber": "CONF-FAKE-ACT",
+    "content": {
+      "location": "Testville",
+      "name": "Museum",
+      "startTime": "2090-03-02T10:00",
+      "startTimeTz": "Europe/Paris",
+    },
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "id": "<it:activity>",
+    "notes": "Bring ID",
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": 25,
+    "tripId": "<trip>",
+    "type": "Activity",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-FLT",
+    "content": {
+      "legs": [
+        {
+          "airline": "Test Air",
+          "arrivalAirport": "BBB",
+          "arrivalTime": "2030-01-10T17:00",
+          "arrivalTimeTz": "America/New_York",
+          "departureAirport": "AAA",
+          "departureTime": "2030-01-10T09:00",
+          "departureTimeTz": "America/Los_Angeles",
+          "flightNumber": "TA100",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "12A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Test Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-0001",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:flight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-OLD",
+    "content": {
+      "legs": [
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "DDD",
+          "arrivalTime": "2090-03-01T11:00",
+          "arrivalTimeTz": "Europe/Paris",
+          "departureAirport": "CCC",
+          "departureTime": "2090-03-01T08:00",
+          "departureTimeTz": "Europe/London",
+          "fareClass": "Economy",
+          "flightNumber": "LA1",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "3C",
+            },
+          ],
+        },
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "EEE",
+          "arrivalTime": "2090-03-01T15:00",
+          "departureAirport": "DDD",
+          "departureTime": "2090-03-01T13:00",
+          "fareClass": "Business",
+          "flightNumber": "LA2",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "1A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Legacy Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-OLD1",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:oldFlight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-RAIL",
+    "content": {
+      "arrivalStation": "Beta",
+      "arrivalTime": "2090-03-03T12:00",
+      "departureStation": "Alpha",
+      "departureTime": "2090-03-03T09:00",
+      "seatAssignments": [
+        {
+          "carriageNumber": "7",
+          "participantId": "<editorP>",
+          "seatNumber": "44",
+        },
+      ],
+      "trainNumber": "FR9",
+      "trainOperator": "Fake Rail",
+      "travelers": [
+        {
+          "name": "Rail Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-RAIL",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:rail>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Pending",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Rail",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": null,
+    "content": {
+      "checkInDate": "2090-03-01",
+      "checkInTime": "15:00",
+      "checkOutDate": "2090-03-08",
+      "checkOutTime": "11:00",
+      "propertyName": "Fake Inn",
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:lodging>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Lodging",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/itineraries > owner gets the full projection (snapshot) 1`] = `
+[
+  {
+    "confirmationNumber": "CONF-FAKE-ACT",
+    "content": {
+      "location": "Testville",
+      "name": "Museum",
+      "startTime": "2090-03-02T10:00",
+      "startTimeTz": "Europe/Paris",
+    },
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "id": "<it:activity>",
+    "notes": "Bring ID",
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": 25,
+    "tripId": "<trip>",
+    "type": "Activity",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-FLT",
+    "content": {
+      "legs": [
+        {
+          "airline": "Test Air",
+          "arrivalAirport": "BBB",
+          "arrivalTime": "2030-01-10T17:00",
+          "arrivalTimeTz": "America/New_York",
+          "departureAirport": "AAA",
+          "departureTime": "2030-01-10T09:00",
+          "departureTimeTz": "America/Los_Angeles",
+          "flightNumber": "TA100",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "12A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Test Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-0001",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:flight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-OLD",
+    "content": {
+      "legs": [
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "DDD",
+          "arrivalTime": "2090-03-01T11:00",
+          "arrivalTimeTz": "Europe/Paris",
+          "departureAirport": "CCC",
+          "departureTime": "2090-03-01T08:00",
+          "departureTimeTz": "Europe/London",
+          "fareClass": "Economy",
+          "flightNumber": "LA1",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "3C",
+            },
+          ],
+        },
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "EEE",
+          "arrivalTime": "2090-03-01T15:00",
+          "departureAirport": "DDD",
+          "departureTime": "2090-03-01T13:00",
+          "fareClass": "Business",
+          "flightNumber": "LA2",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "1A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Legacy Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-OLD1",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:oldFlight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": "CONF-FAKE-RAIL",
+    "content": {
+      "arrivalStation": "Beta",
+      "arrivalTime": "2090-03-03T12:00",
+      "departureStation": "Alpha",
+      "departureTime": "2090-03-03T09:00",
+      "seatAssignments": [
+        {
+          "carriageNumber": "7",
+          "participantId": "<editorP>",
+          "seatNumber": "44",
+        },
+      ],
+      "trainNumber": "FR9",
+      "trainOperator": "Fake Rail",
+      "travelers": [
+        {
+          "name": "Rail Traveler",
+          "participantId": "<editorP>",
+          "ticketNumber": "TKT-FAKE-RAIL",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:rail>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Pending",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Rail",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "confirmationNumber": null,
+    "content": {
+      "checkInDate": "2090-03-01",
+      "checkInTime": "15:00",
+      "checkOutDate": "2090-03-08",
+      "checkOutTime": "11:00",
+      "propertyName": "Fake Inn",
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:lodging>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Lodging",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/itineraries > viewer gets the viewer projection: no confirmationNumber, no ticketNumber (snapshot) 1`] = `
+[
+  {
+    "content": {
+      "location": "Testville",
+      "name": "Museum",
+      "startTime": "2090-03-02T10:00",
+      "startTimeTz": "Europe/Paris",
+    },
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "id": "<it:activity>",
+    "notes": "Bring ID",
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": 25,
+    "tripId": "<trip>",
+    "type": "Activity",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "content": {
+      "legs": [
+        {
+          "airline": "Test Air",
+          "arrivalAirport": "BBB",
+          "arrivalTime": "2030-01-10T17:00",
+          "arrivalTimeTz": "America/New_York",
+          "departureAirport": "AAA",
+          "departureTime": "2030-01-10T09:00",
+          "departureTimeTz": "America/Los_Angeles",
+          "flightNumber": "TA100",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "12A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Test Traveler",
+          "participantId": "<editorP>",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:flight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "content": {
+      "legs": [
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "DDD",
+          "arrivalTime": "2090-03-01T11:00",
+          "arrivalTimeTz": "Europe/Paris",
+          "departureAirport": "CCC",
+          "departureTime": "2090-03-01T08:00",
+          "departureTimeTz": "Europe/London",
+          "fareClass": "Economy",
+          "flightNumber": "LA1",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "3C",
+            },
+          ],
+        },
+        {
+          "airline": "Legacy Air",
+          "arrivalAirport": "EEE",
+          "arrivalTime": "2090-03-01T15:00",
+          "departureAirport": "DDD",
+          "departureTime": "2090-03-01T13:00",
+          "fareClass": "Business",
+          "flightNumber": "LA2",
+          "seatAssignments": [
+            {
+              "participantId": "<editorP>",
+              "seatNumber": "1A",
+            },
+          ],
+        },
+      ],
+      "travelers": [
+        {
+          "name": "Legacy Traveler",
+          "participantId": "<editorP>",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:oldFlight>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Flight",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "content": {
+      "arrivalStation": "Beta",
+      "arrivalTime": "2090-03-03T12:00",
+      "departureStation": "Alpha",
+      "departureTime": "2090-03-03T09:00",
+      "seatAssignments": [
+        {
+          "carriageNumber": "7",
+          "participantId": "<editorP>",
+          "seatNumber": "44",
+        },
+      ],
+      "trainNumber": "FR9",
+      "trainOperator": "Fake Rail",
+      "travelers": [
+        {
+          "name": "Rail Traveler",
+          "participantId": "<editorP>",
+        },
+      ],
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:rail>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Pending",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Rail",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "content": {
+      "checkInDate": "2090-03-01",
+      "checkInTime": "15:00",
+      "checkOutDate": "2090-03-08",
+      "checkOutTime": "11:00",
+      "propertyName": "Fake Inn",
+    },
+    "createdAt": "<timestamp>",
+    "currency": null,
+    "id": "<it:lodging>",
+    "notes": null,
+    "schemaVersion": 1,
+    "status": "Confirmed",
+    "totalCost": null,
+    "tripId": "<trip>",
+    "type": "Lodging",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/itineraries > viewer projection of content that fails the view schema is a 500 (full projection returns it as-is) 1`] = `"Internal Server Error"`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > admin: new-format flight (snapshot) 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-FLT",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<editorP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:flight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > editor: new-format flight (snapshot) 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-FLT",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<editorP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:flight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > owner: new-format flight (snapshot) 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-FLT",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<editorP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:flight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > owner: old-format flight is normalized (snapshot) 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-OLD",
+  "content": {
+    "legs": [
+      {
+        "airline": "Legacy Air",
+        "arrivalAirport": "DDD",
+        "arrivalTime": "2090-03-01T11:00",
+        "arrivalTimeTz": "Europe/Paris",
+        "departureAirport": "CCC",
+        "departureTime": "2090-03-01T08:00",
+        "departureTimeTz": "Europe/London",
+        "fareClass": "Economy",
+        "flightNumber": "LA1",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "3C",
+          },
+        ],
+      },
+      {
+        "airline": "Legacy Air",
+        "arrivalAirport": "EEE",
+        "arrivalTime": "2090-03-01T15:00",
+        "departureAirport": "DDD",
+        "departureTime": "2090-03-01T13:00",
+        "fareClass": "Business",
+        "flightNumber": "LA2",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "1A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Legacy Traveler",
+        "participantId": "<editorP>",
+        "ticketNumber": "TKT-FAKE-OLD1",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:oldFlight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > viewer: new-format flight (snapshot) 1`] = `
+{
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<editorP>",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:flight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`GET /trips/:tripId/itineraries/:itineraryId > viewer: old-format flight is normalized (snapshot) 1`] = `
+{
+  "content": {
+    "legs": [
+      {
+        "airline": "Legacy Air",
+        "arrivalAirport": "DDD",
+        "arrivalTime": "2090-03-01T11:00",
+        "arrivalTimeTz": "Europe/Paris",
+        "departureAirport": "CCC",
+        "departureTime": "2090-03-01T08:00",
+        "departureTimeTz": "Europe/London",
+        "fareClass": "Economy",
+        "flightNumber": "LA1",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "3C",
+          },
+        ],
+      },
+      {
+        "airline": "Legacy Air",
+        "arrivalAirport": "EEE",
+        "arrivalTime": "2090-03-01T15:00",
+        "departureAirport": "DDD",
+        "departureTime": "2090-03-01T13:00",
+        "fareClass": "Business",
+        "flightNumber": "LA2",
+        "seatAssignments": [
+          {
+            "participantId": "<editorP>",
+            "seatNumber": "1A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Legacy Traveler",
+        "participantId": "<editorP>",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<it:oldFlight>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Confirmed",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > admin 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-NEW",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<ownerP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<ownerP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": "USD",
+  "id": "<uuid:1>",
+  "notes": "Window please",
+  "schemaVersion": 1,
+  "status": "Pending",
+  "totalCost": 199.99,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > content invalid for its type is 400 with flattened zod details 1`] = `
+{
+  "details": {
+    "fieldErrors": {
+      "legs": [
+        "Invalid input: expected array, received undefined",
+      ],
+    },
+    "formErrors": [],
+  },
+  "error": "Invalid content for type",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > editor 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-NEW",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<ownerP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<ownerP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": "USD",
+  "id": "<uuid:1>",
+  "notes": "Window please",
+  "schemaVersion": 1,
+  "status": "Pending",
+  "totalCost": 199.99,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > owner 1`] = `
+{
+  "confirmationNumber": "CONF-FAKE-NEW",
+  "content": {
+    "legs": [
+      {
+        "airline": "Test Air",
+        "arrivalAirport": "BBB",
+        "arrivalTime": "2030-01-10T17:00",
+        "arrivalTimeTz": "America/New_York",
+        "departureAirport": "AAA",
+        "departureTime": "2030-01-10T09:00",
+        "departureTimeTz": "America/Los_Angeles",
+        "flightNumber": "TA100",
+        "seatAssignments": [
+          {
+            "participantId": "<ownerP>",
+            "seatNumber": "12A",
+          },
+        ],
+      },
+    ],
+    "travelers": [
+      {
+        "name": "Test Traveler",
+        "participantId": "<ownerP>",
+        "ticketNumber": "TKT-FAKE-0001",
+      },
+    ],
+  },
+  "createdAt": "<timestamp>",
+  "currency": "USD",
+  "id": "<uuid:1>",
+  "notes": "Window please",
+  "schemaVersion": 1,
+  "status": "Pending",
+  "totalCost": 199.99,
+  "tripId": "<trip>",
+  "type": "Flight",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > status defaults to Pending; omitted optionals are null 1`] = `
+{
+  "confirmationNumber": null,
+  "content": {
+    "name": "Walk",
+    "startTime": "2090-03-04T08:00",
+  },
+  "createdAt": "<timestamp>",
+  "currency": null,
+  "id": "<uuid:1>",
+  "notes": null,
+  "schemaVersion": 1,
+  "status": "Pending",
+  "totalCost": null,
+  "tripId": "<trip>",
+  "type": "Activity",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/itineraries > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > admin 1`] = `
+{
+  "confirmationNumber": null,
+  "content": {
+    "location": "Testville",
+    "name": "Museum",
+    "startTime": "2090-03-02T10:00",
+    "startTimeTz": "Europe/Paris",
+  },
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "id": "<it:activity>",
+  "notes": "Changed plans",
+  "schemaVersion": 1,
+  "status": "Cancelled",
+  "totalCost": 25,
+  "tripId": "<trip>",
+  "type": "Activity",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > editor 1`] = `
+{
+  "confirmationNumber": null,
+  "content": {
+    "location": "Testville",
+    "name": "Museum",
+    "startTime": "2090-03-02T10:00",
+    "startTimeTz": "Europe/Paris",
+  },
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "id": "<it:activity>",
+  "notes": "Changed plans",
+  "schemaVersion": 1,
+  "status": "Cancelled",
+  "totalCost": 25,
+  "tripId": "<trip>",
+  "type": "Activity",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > invalid content is 400 and nothing is written 1`] = `
+{
+  "details": {
+    "fieldErrors": {
+      "name": [
+        "Invalid input: expected string, received undefined",
+      ],
+      "startTime": [
+        "Invalid input: expected string, received undefined",
+      ],
+    },
+    "formErrors": [],
+  },
+  "error": "Invalid content for type",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > owner 1`] = `
+{
+  "confirmationNumber": null,
+  "content": {
+    "location": "Testville",
+    "name": "Museum",
+    "startTime": "2090-03-02T10:00",
+    "startTimeTz": "Europe/Paris",
+  },
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "id": "<it:activity>",
+  "notes": "Changed plans",
+  "schemaVersion": 1,
+  "status": "Cancelled",
+  "totalCost": 25,
+  "tripId": "<trip>",
+  "type": "Activity",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/itineraries/:itineraryId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;

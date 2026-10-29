@@ -28,12 +28,120 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Inject production config
+      # Every secret reaches the shell only through env: and is referenced as a
+      # quoted "$VAR"; no secrets expression is expanded inside a run string. This
+      # step checks the shape of every value used below BEFORE any sed edits
+      # wrangler.toml, so a malformed secret (quotes, |, /, &, whitespace)
+      # fails here and cannot corrupt the TOML or the shell line. Values are
+      # never echoed; error messages name the secret only.
+      - name: Validate Deploy Secrets
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          ROUTE_PATTERN: ${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}
+          ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+          TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          WEB_APP_ORIGIN: ${{ secrets.WEB_APP_ORIGIN }}
+          KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+          MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
+          ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
+          ACCESS_TOKEN_URL: ${{ secrets.ACCESS_TOKEN_URL }}
+          ACCESS_JWKS_URL: ${{ secrets.ACCESS_JWKS_URL }}
+          ACCESS_ISSUER: ${{ secrets.ACCESS_ISSUER }}
         run: |
-          sed -i 's/PROD_DB_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}/g' wrangler.toml
-          sed -i 's#PROD_ROUTE_PLACEHOLDER#${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}#g' wrangler.toml
-          sed -i 's/PROD_ZONE_PLACEHOLDER/${{ secrets.CLOUDFLARE_ZONE_NAME }}/g' wrangler.toml
-          sed -i 's/PROD_CF_TEAM_DOMAIN_PLACEHOLDER/${{ secrets.CF_ACCESS_TEAM_DOMAIN }}/g' wrangler.toml
+          fail=0
+          err() { echo "::error::$1"; fail=1; }
+
+          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          [[ "$D1_ID" =~ $uuid_re ]] || err "Repository secret CLOUDFLARE_D1_DATABASE_ID is missing or not a UUID."
+
+          # App route, zone and Access team domain replace committed placeholders,
+          # so they are required. The route is <host>/<path>, e.g. host/api/*.
+          host_re='^[a-z0-9.-]+$'
+          [[ "$ROUTE_PATTERN" =~ ^[a-z0-9.-]+/[A-Za-z0-9._/*-]*$ ]] || err "Repository secret CLOUDFLARE_ROUTE_PATTERN is missing or not <host>/<path> (only a-z, 0-9, . - _ / *)."
+          [[ "$ZONE_NAME" =~ $host_re ]] || err "Repository secret CLOUDFLARE_ZONE_NAME is missing or not a bare lowercase hostname."
+          [[ "$TEAM_DOMAIN" =~ $host_re ]] || err "Repository secret CF_ACCESS_TEAM_DOMAIN is missing or not a bare lowercase hostname (e.g. <team>.cloudflareaccess.com)."
+          # CORS origin for the web app: scheme://host[:port], no path.
+          if [ -z "$WEB_APP_ORIGIN" ]; then
+            echo "::warning::Repository secret WEB_APP_ORIGIN is not set; the web app's origin will be refused by CORS."
+          elif ! [[ "$WEB_APP_ORIGIN" =~ ^https://[a-z0-9.-]+(:[0-9]+)?$ ]]; then
+            err "Repository secret WEB_APP_ORIGIN must be https://<host> with no path or trailing slash."
+          fi
+
+          # OAUTH_KV (Stage 2 OAuth storage) is a required binding: fail rather
+          # than deploy with the placeholder id.
+          if [ -z "$KV_OAUTH_ID" ]; then
+            err "Repository secret CLOUDFLARE_KV_OAUTH_ID is not set (id of the OAUTH_KV namespace)."
+          elif ! [[ "$KV_OAUTH_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            err "Repository secret CLOUDFLARE_KV_OAUTH_ID must be 32 lowercase hex characters."
+          fi
+
+          # https:// URL with no whitespace, quotes or backslashes.
+          url_re='^https://[^[:space:]"'"'"'\\]+$'
+          for name in ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+            v="$(printenv "$name" || true)"
+            if [ -n "$v" ] && ! [[ "$v" =~ $url_re ]]; then
+              err "Repository secret $name must start with https:// and contain no whitespace, quotes or backslashes."
+            fi
+          done
+
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          if [ -n "$host" ]; then
+            # Stage 2 is all-or-nothing: with MCP_HOST set, every companion value is required.
+            missing=""
+            for name in MCP_PUBLIC_URL ACCESS_AUTHORIZATION_URL ACCESS_TOKEN_URL ACCESS_JWKS_URL ACCESS_ISSUER; do
+              [ -n "$(printenv "$name" || true)" ] || missing="$missing $name"
+            done
+            [ -z "$missing" ] || err "MCP_HOST is set but these repository secrets are not:$missing"
+
+            [[ "$host" =~ $host_re ]] || err "Repository secret MCP_HOST must be a bare hostname matching ^[a-z0-9.-]+\$ (no scheme, port, path or whitespace)."
+            # The OAuth resource id must be exactly https://<lowercased MCP_HOST>/mcp.
+            if [ -n "$MCP_PUBLIC_URL" ] && [ "$MCP_PUBLIC_URL" != "https://$host/mcp" ]; then
+              err "Repository secret MCP_PUBLIC_URL must equal https://<MCP_HOST in lowercase>/mcp exactly."
+            fi
+          elif [ -n "$MCP_PUBLIC_URL" ]; then
+            err "Repository secret MCP_PUBLIC_URL is set but MCP_HOST is not."
+          fi
+
+          exit "$fail"
+
+      # Shapes validated above, so none can break the sed expressions (| delimiter).
+      - name: Inject production config
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          ROUTE_PATTERN: ${{ secrets.CLOUDFLARE_ROUTE_PATTERN }}
+          ZONE_NAME: ${{ secrets.CLOUDFLARE_ZONE_NAME }}
+          TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+        run: |
+          sed -i "s|PROD_DB_ID_PLACEHOLDER|${D1_ID}|g" wrangler.toml
+          sed -i "s|PROD_ROUTE_PLACEHOLDER|${ROUTE_PATTERN}|g" wrangler.toml
+          sed -i "s|PROD_ZONE_PLACEHOLDER|${ZONE_NAME}|g" wrangler.toml
+          sed -i "s|PROD_CF_TEAM_DOMAIN_PLACEHOLDER|${TEAM_DOMAIN}|g" wrangler.toml
+          ! grep -q 'PROD_[A-Z_]*PLACEHOLDER' wrangler.toml || { echo "::error::A production placeholder was not replaced in wrangler.toml"; exit 1; }
+
+      # Shape validated above (32 hex characters), so it is safe in the sed expression.
+      - name: Inject OAuth KV Namespace ID
+        env:
+          KV_OAUTH_ID: ${{ secrets.CLOUDFLARE_KV_OAUTH_ID }}
+        run: |
+          sed -i "s/OAUTH_KV_ID_PLACEHOLDER/${KV_OAUTH_ID}/g" wrangler.toml
+          grep -qF "id = \"${KV_OAUTH_ID}\"" wrangler.toml || { echo "::error::OAUTH_KV id injection failed"; exit 1; }
+
+      # MCP hostname (Stage 2), attached as a Workers Custom Domain so Cloudflare
+      # creates the DNS record and certificate itself. Added only when MCP_HOST
+      # is set; otherwise the placeholder stays a TOML comment. The host is
+      # lowercased and validated (^[a-z0-9.-]+$) above.
+      - name: Inject MCP Custom Domain
+        env:
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+        run: |
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          if [ -z "$host" ]; then
+            echo "MCP_HOST not set; skipping the MCP custom domain (Stage 2 stays disabled)."
+            exit 0
+          fi
+          sed -i "s|# MCP_ROUTE_PLACEHOLDER|{ pattern = \"${host}\", custom_domain = true },|" wrangler.toml
+          grep -qF "{ pattern = \"${host}\", custom_domain = true }," wrangler.toml || { echo "::error::MCP custom domain injection failed"; exit 1; }
 
       - name: Run Migrations
         uses: cloudflare/wrangler-action@v4
@@ -43,10 +151,31 @@ jobs:
           workingDirectory: 'api'
           command: d1 migrations apply trips-db --remote
 
+      # Run step instead of wrangler-action so every --var value is a quoted
+      # shell argument (wrangler-action's command: is an unquoted string).
+      # wrangler reads CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID from env.
+      # Stage 2 vars: an unset secret becomes an empty value, which matches the
+      # committed default in wrangler.toml and leaves Stage 2 disabled.
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: 'api'
-          command: deploy --var BOOTSTRAP_ADMIN_EMAIL:${{ secrets.BOOTSTRAP_ADMIN_EMAIL }} --var WEB_APP_ORIGIN:${{ secrets.WEB_APP_ORIGIN }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          WEB_APP_ORIGIN: ${{ secrets.WEB_APP_ORIGIN }}
+          MCP_HOST: ${{ secrets.MCP_HOST }}
+          MCP_PUBLIC_URL: ${{ secrets.MCP_PUBLIC_URL }}
+          ACCESS_AUTHORIZATION_URL: ${{ secrets.ACCESS_AUTHORIZATION_URL }}
+          ACCESS_TOKEN_URL: ${{ secrets.ACCESS_TOKEN_URL }}
+          ACCESS_JWKS_URL: ${{ secrets.ACCESS_JWKS_URL }}
+          ACCESS_ISSUER: ${{ secrets.ACCESS_ISSUER }}
+        run: |
+          host="$(printf '%s' "$MCP_HOST" | tr 'A-Z' 'a-z')"
+          npx wrangler deploy \
+            --var "BOOTSTRAP_ADMIN_EMAIL:${BOOTSTRAP_ADMIN_EMAIL}" \
+            --var "WEB_APP_ORIGIN:${WEB_APP_ORIGIN}" \
+            --var "MCP_HOST:${host}" \
+            --var "MCP_PUBLIC_URL:${MCP_PUBLIC_URL}" \
+            --var "ACCESS_AUTHORIZATION_URL:${ACCESS_AUTHORIZATION_URL}" \
+            --var "ACCESS_TOKEN_URL:${ACCESS_TOKEN_URL}" \
+            --var "ACCESS_JWKS_URL:${ACCESS_JWKS_URL}" \
+            --var "ACCESS_ISSUER:${ACCESS_ISSUER}"

@@ -1,0 +1,3363 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Trips API",
+    "version": "1.0.0",
+    "description": "Travel itinerary management API for Openclaw"
+  },
+  "components": {
+    "schemas": {
+      "InviteInfo": {
+        "type": "object",
+        "properties": {
+          "tripName": {
+            "type": "string"
+          },
+          "inviterName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tripName",
+          "inviterName",
+          "role",
+          "expiresAt"
+        ]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "email",
+              "name",
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "email",
+                "isPrimary"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "avatarUrl",
+          "emails"
+        ]
+      },
+      "UpdateProfileRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "LinkPreview": {
+        "type": "object",
+        "properties": {
+          "destinationAccount": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "email"
+            ]
+          },
+          "isSelf": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "destinationAccount",
+          "isSelf"
+        ]
+      },
+      "LinkPreviewRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "LinkRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "OAuthGrant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Grant id"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for unknown, deleted or metadata-document (URL) clients"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601; null when no expiry is recorded"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "clientName",
+          "scopes",
+          "createdAt",
+          "expiresAt"
+        ]
+      },
+      "LinkPreviewRequest2": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "LinkRequest2": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "Trip": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "destination": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "splitwiseGroupId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "destination",
+          "startDate",
+          "endDate",
+          "description",
+          "splitwiseGroupId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpcomingTrip": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "traveling": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "email",
+                "traveling"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "startDate",
+          "endDate",
+          "participants"
+        ]
+      },
+      "CreateTrip": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "destination": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "splitwiseGroupId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateTrip": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "destination": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "splitwiseGroupId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Participant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "Owner",
+              "Editor",
+              "Viewer"
+            ]
+          },
+          "traveling": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tripId",
+          "userId",
+          "email",
+          "name",
+          "role",
+          "traveling",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateParticipant": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "Owner",
+              "Editor",
+              "Viewer"
+            ]
+          },
+          "traveling": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "role"
+        ]
+      },
+      "UpdateParticipant": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "Owner",
+              "Editor",
+              "Viewer"
+            ]
+          },
+          "traveling": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Expense": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Food",
+              "Transport",
+              "Accommodation",
+              "Entertainment",
+              "Shopping",
+              "Other"
+            ]
+          },
+          "payerId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "splitType": {
+            "type": "string",
+            "enum": [
+              "EQUAL",
+              "EXACT",
+              "PERCENTAGE"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tripId",
+          "description",
+          "amount",
+          "currency",
+          "category",
+          "payerId",
+          "splitType",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateExpense": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Food",
+              "Transport",
+              "Accommodation",
+              "Entertainment",
+              "Shopping",
+              "Other"
+            ]
+          },
+          "payerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "splitType": {
+            "type": "string",
+            "enum": [
+              "EQUAL",
+              "EXACT",
+              "PERCENTAGE"
+            ]
+          }
+        },
+        "required": [
+          "description",
+          "amount",
+          "currency",
+          "category",
+          "splitType"
+        ]
+      },
+      "UpdateExpense": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "Food",
+              "Transport",
+              "Accommodation",
+              "Entertainment",
+              "Shopping",
+              "Other"
+            ]
+          },
+          "payerId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "splitType": {
+            "type": "string",
+            "enum": [
+              "EQUAL",
+              "EXACT",
+              "PERCENTAGE"
+            ]
+          }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reservationId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "fileUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "PDF_TICKET",
+              "IMAGE_RECEIPT",
+              "BOARDING_PASS",
+              "OTHER"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tripId",
+          "reservationId",
+          "fileUrl",
+          "documentType",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateDocument": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "PDF_TICKET",
+              "IMAGE_RECEIPT",
+              "BOARDING_PASS",
+              "OTHER"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "fileUrl",
+          "documentType",
+          "name"
+        ]
+      },
+      "UpdateDocument": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "fileUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "PDF_TICKET",
+              "IMAGE_RECEIPT",
+              "BOARDING_PASS",
+              "OTHER"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "Itinerary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Flight",
+              "Lodging",
+              "Rail",
+              "Car",
+              "Restaurant",
+              "Transport",
+              "Activity"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Confirmed",
+              "Pending",
+              "Cancelled"
+            ]
+          },
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "confirmationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalCost": {
+            "type": "number",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tripId",
+          "type",
+          "status",
+          "schemaVersion",
+          "content",
+          "confirmationNumber",
+          "totalCost",
+          "currency",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateItinerary": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Flight",
+              "Lodging",
+              "Rail",
+              "Car",
+              "Restaurant",
+              "Transport",
+              "Activity"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Confirmed",
+              "Pending",
+              "Cancelled"
+            ],
+            "default": "Pending"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "confirmationNumber": {
+            "type": "string"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "content"
+        ]
+      },
+      "UpdateItinerary": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Flight",
+              "Lodging",
+              "Rail",
+              "Car",
+              "Restaurant",
+              "Transport",
+              "Activity"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Confirmed",
+              "Pending",
+              "Cancelled"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "confirmationNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalCost": {
+            "type": "number",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Invite": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tripId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "invitedBy": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "tripName": {
+            "type": "string"
+          },
+          "inviterName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tripId",
+          "participantId",
+          "email",
+          "name",
+          "role",
+          "token",
+          "status",
+          "invitedBy",
+          "expiresAt",
+          "createdAt"
+        ]
+      },
+      "CreateInvite": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "default": ""
+          },
+          "participantId": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateUser": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "viewer"
+            ],
+            "default": "viewer"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ]
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "viewer"
+            ]
+          }
+        }
+      },
+      "MergeUsers": {
+        "type": "object",
+        "properties": {
+          "keepUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mergeUserId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "keepUserId",
+          "mergeUserId"
+        ]
+      },
+      "ServiceIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cfAccessSubject": {
+            "type": "string"
+          },
+          "commonName": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "userEmail": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cfAccessSubject",
+          "commonName",
+          "userId",
+          "createdAt"
+        ]
+      },
+      "CreateServiceIdentity": {
+        "type": "object",
+        "properties": {
+          "cfAccessSubject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commonName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "cfAccessSubject",
+          "commonName",
+          "userId"
+        ]
+      },
+      "AdminOAuthGrant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Grant id"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Null for unknown, deleted or metadata-document (URL) clients"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601; null when no expiry is recorded"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "userEmail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "clientName",
+          "scopes",
+          "createdAt",
+          "expiresAt",
+          "userId",
+          "userEmail"
+        ]
+      },
+      "OAuthClient": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string"
+          },
+          "confidential": {
+            "type": "boolean"
+          },
+          "registrationDate": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601"
+          }
+        },
+        "required": [
+          "clientId",
+          "clientName",
+          "redirectUris",
+          "tokenEndpointAuthMethod",
+          "confidential",
+          "registrationDate"
+        ]
+      },
+      "CreatedOAuthClient": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OAuthClient"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "clientSecret": {
+                "type": "string",
+                "description": "Shown once. Only its hash is stored; it cannot be retrieved again."
+              }
+            },
+            "required": [
+              "clientSecret"
+            ]
+          }
+        ]
+      },
+      "CreateOAuthClient": {
+        "type": "object",
+        "properties": {
+          "clientName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string",
+            "enum": [
+              "client_secret_basic",
+              "client_secret_post"
+            ],
+            "default": "client_secret_basic"
+          }
+        },
+        "required": [
+          "clientName",
+          "redirectUris"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/auth/invite/:token": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invite details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invite not found or expired"
+          }
+        }
+      }
+    },
+    "/auth/invite/:token/accept": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invite accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invite not found or expired"
+          },
+          "409": {
+            "description": "Already a participant"
+          }
+        }
+      }
+    },
+    "/auth/users": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "email",
+                      "name"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/link-token": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Link token generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/link-preview": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Link preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkPreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found or expired"
+          }
+        }
+      }
+    },
+    "/auth/me/link": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accounts merged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot link to yourself"
+          },
+          "404": {
+            "description": "Token not found or expired"
+          }
+        }
+      }
+    },
+    "/auth/me/emails/{emailId}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "emailId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "isPrimary": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "email",
+                      "isPrimary"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot remove primary or only email"
+          },
+          "404": {
+            "description": "Email not found"
+          }
+        }
+      }
+    },
+    "/auth/me/emails/{emailId}/primary": {
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "emailId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Primary email updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "isPrimary": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "email",
+                      "isPrimary"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Email not found"
+          }
+        }
+      }
+    },
+    "/auth/me/grants": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List the apps connected to your account through OAuth",
+        "responses": {
+          "200": {
+            "description": "Your grants, newest first; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthGrant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me/grants/{grantId}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Disconnect an app: revoke one of your grants and all its tokens",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; the grant's access and refresh tokens no longer work"
+          },
+          "404": {
+            "description": "Not one of your grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/link-preview": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkPreviewRequest2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Link preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkPreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token not found or expired"
+          }
+        }
+      }
+    },
+    "/auth/link": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRequest2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accounts merged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot link to yourself"
+          },
+          "404": {
+            "description": "Token not found or expired"
+          }
+        }
+      }
+    },
+    "/eval/evaluate": {
+      "post": {
+        "tags": [
+          "External Evaluation"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Evaluation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/eval/keys": {
+      "get": {
+        "tags": [
+          "External Evaluation"
+        ],
+        "responses": {
+          "200": {
+            "description": "JWKS public keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "nullable": true
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "keys"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trips": {
+      "get": {
+        "tags": [
+          "Trips"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of trips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Trip"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Trips"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTrip"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created trip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trip"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trips/upcoming": {
+      "get": {
+        "tags": [
+          "Trips"
+        ],
+        "responses": {
+          "200": {
+            "description": "Next 3 upcoming trips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UpcomingTrip"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trips/{tripId}": {
+      "get": {
+        "tags": [
+          "Trips"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trip details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trip"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Trips"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTrip"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated trip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trip"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Trips"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/participants": {
+      "get": {
+        "tags": [
+          "Participants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of participants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Participant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Participants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateParticipant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created participant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Participant"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/participants/{participantId}": {
+      "put": {
+        "tags": [
+          "Participants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "participantId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateParticipant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated participant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Participant"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Participant not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Participants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "participantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Participant not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/expenses": {
+      "get": {
+        "tags": [
+          "Expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of expenses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Expense"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExpense"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created expense",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Expense"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/expenses/{expenseId}": {
+      "put": {
+        "tags": [
+          "Expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "expenseId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateExpense"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated expense",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Expense"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Expense not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "expenseId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Expense not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/documents": {
+      "get": {
+        "tags": [
+          "Documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Document"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocument"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/documents/{documentId}": {
+      "put": {
+        "tags": [
+          "Documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocument"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Documents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Document not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/itineraries": {
+      "get": {
+        "tags": [
+          "Itineraries"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of itineraries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Itinerary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Itineraries"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateItinerary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created itinerary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Itinerary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "404": {
+            "description": "Trip not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/itineraries/{itineraryId}": {
+      "get": {
+        "tags": [
+          "Itineraries"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "itineraryId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Itinerary details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Itinerary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Itineraries"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "itineraryId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateItinerary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated itinerary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Itinerary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Itineraries"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "itineraryId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/invites": {
+      "get": {
+        "tags": [
+          "Invites"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of invites",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Invite"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Invites"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invite created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invite"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Trip not found"
+          },
+          "409": {
+            "description": "Already invited or already a participant"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/invites/{inviteId}": {
+      "delete": {
+        "tags": [
+          "Invites"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "tripId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "inviteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Invite revoked"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Invite not found"
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already exists"
+          }
+        }
+      }
+    },
+    "/admin/users/{userId}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/admin/users/merge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeUsers"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accounts merged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "emails": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "isPrimary": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "email",
+                              "isPrimary"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "emails"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot merge user with themselves"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/admin/service-identities": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of service identities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceIdentity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceIdentity"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created service identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceIdentity"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          },
+          "409": {
+            "description": "Subject already mapped"
+          }
+        }
+      }
+    },
+    "/admin/service-identities/{identityId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "identityId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/admin/grants": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List every user's OAuth grants (connected apps)",
+        "responses": {
+          "200": {
+            "description": "All grants, newest first; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminOAuthGrant"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/grants/{userId}/{grantId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke a grant and all its tokens",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; the grant's access and refresh tokens no longer work"
+          },
+          "404": {
+            "description": "No such grant for that user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/oauth-clients": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List stored OAuth clients (static and dynamically registered), without secrets",
+        "responses": {
+          "200": {
+            "description": "Clients; empty when OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OAuthClient"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create a static confidential OAuth client (for platforms without dynamic registration)",
+        "description": "The server generates the client id and secret. The secret is returned once in this response, stored only as a hash, and never logged. Every redirect URI must be on the server's allow-list.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOAuthClient"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created client, including the one-time secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedOAuthClient"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Redirect URI not allowed or metadata rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/oauth-clients/{clientId}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete a stored OAuth client and revoke all of its grants",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$"
+            },
+            "required": true,
+            "name": "clientId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted; its grants and refresh tokens are revoked"
+          },
+          "404": {
+            "description": "Client not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth (Stage 2) is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,12 +1,11 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { expenses, trips, participants } from "../db/schema";
 import {
   ExpenseSchema,
   CreateExpenseSchema,
   UpdateExpenseSchema,
 } from "../schemas/expense";
+import { createExpense, deleteExpense, listExpenses, updateExpense } from "../services/expenses";
 
 const app = new OpenAPIHono<Env>();
 
@@ -30,22 +29,10 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const user = c.get("user");
-    if (user.role !== "admin") {
-      const membership = await db
-        .select({ id: participants.id })
-        .from(participants)
-        .where(and(eq(participants.tripId, tripId), eq(participants.userId, user.id)))
-        .limit(1);
-      if (!membership.length) return c.json({ error: "Trip not found" }, 404);
-    }
-    const result = await db
-      .select()
-      .from(expenses)
-      .where(eq(expenses.tripId, tripId));
-    return c.json(result as any, 200);
+    const rows = await listExpenses(getDb(c.env.DB), c.get("user"), tripId);
+    // REST keeps its payerId-only shape; payerName is for MCP.
+    return c.json(rows.map(({ payerName: _payerName, ...row }) => row), 200);
   }
 );
 
@@ -69,25 +56,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const trip = await db.select().from(trips).where(eq(trips.id, tripId));
-    if (!trip.length) return c.json({ error: "Trip not found" }, 404);
-    const body = c.req.valid("json");
-    const now = new Date().toISOString();
-    const row = {
-      id: crypto.randomUUID(),
-      tripId,
-      description: body.description,
-      amount: body.amount,
-      currency: body.currency,
-      category: body.category,
-      payerId: body.payerId ?? null,
-      splitType: body.splitType,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.insert(expenses).values(row);
+    const row = await createExpense(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("json"));
     return c.json(row, 201);
   }
 );
@@ -112,19 +82,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, expenseId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(expenses)
-      .where(and(eq(expenses.id, expenseId), eq(expenses.tripId, tripId)));
-    if (!existing.length) return c.json({ error: "Expense not found" }, 404);
-    const updated = {
-      ...existing[0],
-      ...c.req.valid("json"),
-      updatedAt: new Date().toISOString(),
-    };
-    await db.update(expenses).set(updated).where(eq(expenses.id, expenseId));
+    const updated = await updateExpense(getDb(c.env.DB), c.get("user"), tripId, expenseId, c.req.valid("json"));
     return c.json(updated, 200);
   }
 );
@@ -141,14 +100,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId, expenseId } = c.req.valid("param");
-    const existing = await db
-      .select()
-      .from(expenses)
-      .where(and(eq(expenses.id, expenseId), eq(expenses.tripId, tripId)));
-    if (!existing.length) return c.json({ error: "Expense not found" }, 404);
-    await db.delete(expenses).where(eq(expenses.id, expenseId));
+    await deleteExpense(getDb(c.env.DB), c.get("user"), tripId, expenseId);
     return c.body(null, 204);
   }
 );

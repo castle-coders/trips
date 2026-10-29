@@ -20,3 +20,19 @@ export const evalRateLimit: MiddlewareHandler<EvalEnv> = async (c, next) => {
   }
   return next();
 };
+
+type McpEnv = Env & {
+  Bindings: Env["Bindings"] & { MCP_RATE_LIMITER?: RateLimiter };
+};
+
+/** Per-user limit on /mcp. Must run after authMiddleware (needs c.get("user")). No-op without the binding. */
+export const mcpRateLimit: MiddlewareHandler<McpEnv> = async (c, next) => {
+  const limiter = c.env.MCP_RATE_LIMITER;
+  if (!limiter) return next();
+
+  const { success } = await limiter.limit({ key: c.get("user").id });
+  if (!success) {
+    return c.json({ error: "Too many requests" }, 429);
+  }
+  return next();
+};

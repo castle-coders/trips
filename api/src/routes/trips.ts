@@ -1,9 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { eq, and, gte, isNotNull, asc } from "drizzle-orm";
 import { getDb, type Env } from "../db";
-import { trips, participants } from "../db/schema";
 import { TripSchema, CreateTripSchema, UpdateTripSchema } from "../schemas/trip";
-import { getTripRole } from "../middleware/tripRole";
+import { createTrip, deleteTrip, getTrip, listTrips, listUpcomingTrips, updateTrip } from "../services/trips";
 
 const app = new OpenAPIHono<Env>();
 
@@ -21,16 +19,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const user = c.get("user");
-    if (user.role === "admin") {
-      return c.json(await db.select().from(trips), 200);
-    }
-    const result = await db
-      .select({ trips })
-      .from(trips)
-      .innerJoin(participants, and(eq(participants.tripId, trips.id), eq(participants.userId, user.id)));
-    return c.json(result.map((r) => r.trips), 200);
+    const rows = await listTrips(getDb(c.env.DB), c.get("user"));
+    return c.json(rows.map(({ role: _role, ...trip }) => trip), 200);
   }
 );
 
@@ -66,60 +56,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const user = c.get("user");
-    const today = new Date().toISOString().slice(0, 10);
-
-    // Get trips where endDate >= today, with dates present
-    let query = db
-      .select({ trips })
-      .from(trips)
-      .where(
-        and(
-          isNotNull(trips.endDate),
-          isNotNull(trips.startDate),
-          gte(trips.endDate, today)
-        )
-      );
-
-    if (user.role !== "admin") {
-      query = db
-        .select({ trips })
-        .from(trips)
-        .innerJoin(
-          participants,
-          and(eq(participants.tripId, trips.id), eq(participants.userId, user.id))
-        )
-        .where(
-          and(
-            isNotNull(trips.endDate),
-            isNotNull(trips.startDate),
-            gte(trips.endDate, today)
-          )
-        );
-    }
-
-    const result = await query.orderBy(asc(trips.startDate)).limit(3);
-    const tripRows = result.map((r) => r.trips);
-
-    // Fetch participants for each trip
-    const response = await Promise.all(
-      tripRows.map(async (trip) => {
-        const tripParticipants = await db
-          .select({ name: participants.name, email: participants.email, traveling: participants.traveling })
-          .from(participants)
-          .where(eq(participants.tripId, trip.id));
-        return {
-          id: trip.id,
-          name: trip.name,
-          startDate: trip.startDate!,
-          endDate: trip.endDate!,
-          participants: tripParticipants,
-        };
-      })
-    );
-
-    return c.json(response, 200);
+    return c.json(await listUpcomingTrips(getDb(c.env.DB), c.get("user")), 200);
   }
 );
 
@@ -141,20 +78,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const user = c.get("user");
-    if (user.role !== "admin") {
-      const membership = await db
-        .select({ id: participants.id })
-        .from(participants)
-        .where(and(eq(participants.tripId, tripId), eq(participants.userId, user.id)))
-        .limit(1);
-      if (!membership.length) return c.json({ error: "Trip not found" }, 404);
-    }
-    const result = await db.select().from(trips).where(eq(trips.id, tripId));
-    if (!result.length) return c.json({ error: "Trip not found" }, 404);
-    return c.json(result[0], 200);
+    const { trip } = await getTrip(getDb(c.env.DB), c.get("user"), tripId);
+    return c.json(trip, 200);
   }
 );
 
@@ -177,22 +103,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
-    const body = c.req.valid("json");
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-    const row = {
-      id,
-      name: body.name,
-      destination: body.destination ?? null,
-      startDate: body.startDate ?? null,
-      endDate: body.endDate ?? null,
-      description: body.description ?? null,
-      splitwiseGroupId: body.splitwiseGroupId ?? null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.insert(trips).values(row);
+    const row = await createTrip(getDb(c.env.DB), c.get("user"), c.req.valid("json"));
     return c.json(row, 201);
   }
 );
@@ -218,20 +129,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const body = c.req.valid("json");
-    const existing = await db
-      .select()
-      .from(trips)
-      .where(eq(trips.id, tripId));
-    if (!existing.length) return c.json({ error: "Trip not found" }, 404);
-    const updated = {
-      ...existing[0],
-      ...body,
-      updatedAt: new Date().toISOString(),
-    };
-    await db.update(trips).set(updated).where(eq(trips.id, tripId));
+    const updated = await updateTrip(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("json"));
     return c.json(updated, 200);
   }
 );
@@ -251,17 +150,8 @@ app.openapi(
     },
   }),
   async (c) => {
-    const db = getDb(c.env.DB);
     const { tripId } = c.req.valid("param");
-    const user = c.get("user");
-    const role = await getTripRole(db, tripId, user.id, user.role);
-    if (role !== "Owner") return c.json({ error: "Forbidden: only trip Owners can delete trips" }, 403);
-    const existing = await db
-      .select()
-      .from(trips)
-      .where(eq(trips.id, tripId));
-    if (!existing.length) return c.json({ error: "Trip not found" }, 404);
-    await db.delete(trips).where(eq(trips.id, tripId));
+    await deleteTrip(getDb(c.env.DB), c.get("user"), tripId);
     return c.body(null, 204);
   }
 );

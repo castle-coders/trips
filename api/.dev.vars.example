@@ -1,4 +1,79 @@
-# Copy to .dev.vars.local to add secrets for local development.
-# .dev.vars is committed and sets DEV_MODE=true automatically.
-# Example:
-# SOME_SECRET=value
+# Local development variables and secrets for `wrangler dev`.
+#
+# Names only; values are intentionally omitted. Never put real secrets in this
+# file or in .dev.vars (which is committed and sets DEV_MODE=true). Put them in
+# .dev.vars.local, which is gitignored.
+#
+# Loading: plain `wrangler dev` (npm run dev) reads ONLY .dev.vars. It does not
+# read .dev.vars.local (verified with wrangler 4.76.0). To load both, pass them
+# explicitly; a later --env-file overrides an earlier one (verified):
+#   npx wrangler dev --env-file .dev.vars --env-file .dev.vars.local
+#
+# Non-secret vars come from [vars] in wrangler.toml and only need an entry here
+# to override them locally: CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUDIENCE,
+# CF_ACCESS_INVITE_AUDIENCE, BOOTSTRAP_ADMIN_EMAIL, EXTERNAL_EVAL_KEY_ID, and
+# the Stage 2 vars below (committed as empty strings, so Stage 2 is off).
+#
+# Bindings (no entry needed): DB (local D1), OAUTH_KV (local KV),
+# EVAL_RATE_LIMITER, MCP_RATE_LIMITER, OAUTH_RATE_LIMITER are all simulated
+# locally by wrangler dev from wrangler.toml.
+
+# --- Vars: existing app ---
+
+# "true" bypasses Cloudflare Access verification; requests identify the user
+# with the X-Dev-User-Email header. Local only, never set in production.
+# Used by the REST API and the Stage 1 MCP endpoint (/api/mcp).
+# DEV_MODE=
+
+# --- Secrets: existing app (production: npx wrangler secret put <NAME>) ---
+
+# RSA private key (PKCS#8 PEM) that signs External Evaluation response JWTs.
+# Only needed locally when exercising /api/eval/*.
+# EXTERNAL_EVAL_PRIVATE_KEY=
+
+# --- Vars: Stage 2, OAuth authorization server on the MCP hostname ---
+#
+# Leave MCP_HOST empty (the default) and Stage 2 is disabled: every request is
+# served by the existing app. To try Stage 2 locally, use a DEV Access for SaaS
+# OIDC application (never the production one):
+#   1. Zero Trust -> Access -> Applications -> Add -> SaaS -> OIDC. Add the
+#      redirect URL http://localhost:8787/callback. Give it a policy that lets
+#      your account in.
+#   2. Copy its endpoints and credentials into .dev.vars.local (below).
+#   3. Set MCP_HOST=localhost and MCP_PUBLIC_URL=http://localhost:8787/mcp.
+#   4. Run:
+#        npx wrangler dev --env-file .dev.vars --env-file .dev.vars.local \
+#          --local-upstream localhost:8787
+#      Why --local-upstream: wrangler dev rewrites every request URL to one
+#      host, by default the host of the first route in wrangler.toml (the
+#      production app host), whatever host you browse to (verified). With
+#      --local-upstream localhost:8787 the Worker sees http://localhost:8787/...,
+#      which matches MCP_HOST and MCP_PUBLIC_URL. That process then serves
+#      only Stage 2; run a plain `npm run dev` (other port) for the web app.
+#   5. Connect the MCP Inspector or
+#      `claude mcp add --transport http trips-dev http://localhost:8787/mcp`.
+
+# Bare hostname the dispatcher matches (no scheme, port or path). Empty = off.
+# Locally: localhost (with --local-upstream, see above). Production: injected
+# from the MCP_HOST GitHub secret.
+# MCP_HOST=
+
+# Public MCP endpoint, the OAuth protected-resource identifier. Must equal the
+# URL entered in the client exactly. Locally: http://localhost:8787/mcp.
+# MCP_PUBLIC_URL=
+
+# Access for SaaS OIDC endpoints, copied from the app's page in the dashboard
+# (shape: https://<team>.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<client-id>/...).
+# ACCESS_AUTHORIZATION_URL=
+# ACCESS_TOKEN_URL=
+# ACCESS_JWKS_URL=
+
+# Expected `iss` of the Access for SaaS ID token (the app's Issuer value).
+# ACCESS_ISSUER=
+
+# --- Secrets: Stage 2 (production: npx wrangler secret put <NAME>) ---
+
+# Client ID and client secret of the Access for SaaS OIDC application. The
+# Worker is a confidential client to Access (and also sends PKCE).
+# ACCESS_CLIENT_ID=
+# ACCESS_CLIENT_SECRET=

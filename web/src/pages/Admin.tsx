@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { admin, type AppUser, type ServiceIdentity } from "../lib/api";
+import { Check, Copy } from "lucide-react";
+import {
+  admin,
+  formatOAuthDate,
+  oauthAppName,
+  oauthErrorMessage,
+  oauthScopeLabel,
+  type AppUser,
+  type ServiceIdentity,
+} from "../lib/api";
+import type {
+  AdminOAuthGrant,
+  CreatedOAuthClient,
+  OAuthClient,
+  OAuthTokenEndpointAuthMethod,
+} from "../lib/types";
+
+const grantKey = (g: AdminOAuthGrant) => `${g.userId}:${g.id}`;
 
 export function Admin() {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -31,6 +48,42 @@ export function Admin() {
     commonName: "",
     userId: "",
   });
+
+  // Connected apps (all OAuth grants)
+  const [grants, setGrants] = useState<AdminOAuthGrant[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(true);
+  const [grantsErr, setGrantsErr] = useState("");
+  const [confirmRevokeKey, setConfirmRevokeKey] = useState<string | null>(null);
+  const [revokingKey, setRevokingKey] = useState<string | null>(null);
+
+  // OAuth clients
+  const [clients, setClients] = useState<OAuthClient[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsErr, setClientsErr] = useState("");
+  const [confirmDeleteClientId, setConfirmDeleteClientId] = useState<string | null>(null);
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [newClient, setNewClient] = useState<{
+    clientName: string;
+    redirectUris: string;
+    tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod;
+  }>({ clientName: "", redirectUris: "", tokenEndpointAuthMethod: "client_secret_basic" });
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [createClientErr, setCreateClientErr] = useState("");
+  // Holds the one-time secret only until dismissed. Never persisted anywhere.
+  const [createdClient, setCreatedClient] = useState<CreatedOAuthClient | null>(null);
+  const [secretCopied, setSecretCopied] = useState(false);
+
+  useEffect(() => {
+    admin.listGrants()
+      .then(setGrants)
+      .catch((err) => setGrantsErr(oauthErrorMessage(err)))
+      .finally(() => setGrantsLoading(false));
+    admin.listOAuthClients()
+      .then(setClients)
+      .catch((err) => setClientsErr(oauthErrorMessage(err)))
+      .finally(() => setClientsLoading(false));
+  }, []);
 
   useEffect(() => {
     Promise.all([admin.listUsers(), admin.listServiceIdentities()])
@@ -86,8 +139,8 @@ export function Admin() {
       // Refresh user list
       const refreshed = await admin.listUsers();
       setUsers(refreshed);
-    } catch (err: any) {
-      setMergeErr(err.message);
+    } catch (err) {
+      setMergeErr((err as Error).message);
     } finally {
       setMerging(false);
     }
@@ -104,6 +157,91 @@ export function Admin() {
   const handleDeleteIdentity = async (id: string) => {
     await admin.deleteServiceIdentity(id);
     setIdentities(identities.filter((i) => i.id !== id));
+  };
+
+  const handleRevokeGrant = async (grant: AdminOAuthGrant) => {
+    const key = grantKey(grant);
+    setGrantsErr("");
+    setRevokingKey(key);
+    try {
+      await admin.revokeGrant(grant.userId, grant.id);
+      setGrants((prev) => prev.filter((g) => grantKey(g) !== key));
+    } catch (err) {
+      setGrantsErr(oauthErrorMessage(err));
+    } finally {
+      setRevokingKey(null);
+      setConfirmRevokeKey(null);
+    }
+  };
+
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateClientErr("");
+    const redirectUris = newClient.redirectUris
+      .split("\n")
+      .map((u) => u.trim())
+      .filter(Boolean);
+    if (!redirectUris.length) {
+      setCreateClientErr("Enter at least one redirect URI");
+      return;
+    }
+    setCreatingClient(true);
+    try {
+      const created = await admin.createOAuthClient({
+        clientName: newClient.clientName.trim(),
+        redirectUris,
+        tokenEndpointAuthMethod: newClient.tokenEndpointAuthMethod,
+      });
+      // Keep the secret out of the list state; it lives only in createdClient until dismissed.
+      const listed: OAuthClient = {
+        clientId: created.clientId,
+        clientName: created.clientName,
+        redirectUris: created.redirectUris,
+        tokenEndpointAuthMethod: created.tokenEndpointAuthMethod,
+        confidential: created.confidential,
+        registrationDate: created.registrationDate,
+      };
+      setClients((prev) => [...prev, listed]);
+      setCreatedClient(created);
+      setSecretCopied(false);
+      setNewClient({ clientName: "", redirectUris: "", tokenEndpointAuthMethod: "client_secret_basic" });
+      setShowNewClient(false);
+    } catch (err) {
+      setCreateClientErr(oauthErrorMessage(err));
+    } finally {
+      setCreatingClient(false);
+    }
+  };
+
+  const handleCopySecret = async () => {
+    if (!createdClient) return;
+    try {
+      await navigator.clipboard.writeText(createdClient.clientSecret);
+      setSecretCopied(true);
+    } catch {
+      setSecretCopied(false);
+    }
+  };
+
+  const dismissCreatedClient = () => {
+    setCreatedClient(null);
+    setSecretCopied(false);
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    setClientsErr("");
+    setDeletingClientId(clientId);
+    try {
+      await admin.deleteOAuthClient(clientId);
+      setClients((prev) => prev.filter((cl) => cl.clientId !== clientId));
+      setGrants((prev) => prev.filter((g) => g.clientId !== clientId));
+      if (createdClient?.clientId === clientId) dismissCreatedClient();
+    } catch (err) {
+      setClientsErr(oauthErrorMessage(err));
+    } finally {
+      setDeletingClientId(null);
+      setConfirmDeleteClientId(null);
+    }
   };
 
   const inputClass =
@@ -300,7 +438,7 @@ export function Admin() {
       </section>
 
       {/* Service Identities */}
-      <section>
+      <section className="mb-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             Service Identities
@@ -420,6 +558,295 @@ export function Admin() {
                     className="px-4 py-6 text-center text-gray-400"
                   >
                     No service identities configured.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Connected apps (OAuth grants) */}
+      <section className="mb-10">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Connected apps</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          Every app any user has connected through OAuth. Revoking a grant invalidates its tokens immediately.
+        </p>
+        {grantsErr && <p className="mb-3 text-sm text-red-600">{grantsErr}</p>}
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 font-medium text-gray-500">User</th>
+                <th className="px-4 py-3 font-medium text-gray-500">App</th>
+                <th className="px-4 py-3 font-medium text-gray-500">Permissions</th>
+                <th className="px-4 py-3 font-medium text-gray-500">Connected</th>
+                <th className="px-4 py-3 font-medium text-gray-500"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {grantsLoading && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    Loading...
+                  </td>
+                </tr>
+              )}
+              {!grantsLoading &&
+                grants.map((g) => {
+                  const key = grantKey(g);
+                  return (
+                    <tr key={key}>
+                      <td className="px-4 py-3 text-gray-600">{g.userEmail}</td>
+                      <td className="max-w-[200px] truncate px-4 py-3 text-gray-900" title={g.clientId}>
+                        {oauthAppName(g)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {g.scopes.map(oauthScopeLabel).join(", ") || "None"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                        {formatOAuthDate(g.createdAt)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        {confirmRevokeKey === key ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Revoke?</span>
+                            <button
+                              onClick={() => handleRevokeGrant(g)}
+                              disabled={revokingKey === key}
+                              className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                            >
+                              {revokingKey === key ? "Revoking..." : "Confirm"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRevokeKey(null)}
+                              disabled={revokingKey === key}
+                              className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRevokeKey(key)}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              {!grantsLoading && !grants.length && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    No apps are connected.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* OAuth clients */}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">OAuth clients</h2>
+          <button
+            onClick={() => {
+              setCreateClientErr("");
+              setShowNewClient(true);
+            }}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+          >
+            + Add Client
+          </button>
+        </div>
+        <p className="mb-4 text-sm text-gray-500">
+          Pre-registered clients for platforms without dynamic registration, plus any dynamically registered clients.
+        </p>
+
+        {createdClient && (
+          <div className="mb-4 space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm font-medium text-gray-900">
+              Client created: {oauthAppName(createdClient)}
+            </p>
+            <p className="text-sm text-amber-800">
+              Copy the client secret now. It won't be shown again and cannot be recovered.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">Client ID</label>
+              <input
+                className={`${inputClass} bg-white font-mono text-xs`}
+                value={createdClient.clientId}
+                readOnly
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">Client secret</label>
+              <div className="flex gap-2">
+                <input
+                  className={`${inputClass} bg-white font-mono text-xs`}
+                  value={createdClient.clientSecret}
+                  readOnly
+                  autoComplete="off"
+                  spellCheck={false}
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  onClick={handleCopySecret}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  {secretCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {secretCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={dismissCreatedClient}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              I've saved it, dismiss
+            </button>
+          </div>
+        )}
+
+        {showNewClient && (
+          <form
+            onSubmit={handleCreateClient}
+            className="mb-4 space-y-3 rounded-lg border border-gray-200 bg-white p-4"
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <input
+                className={inputClass}
+                placeholder="Client name"
+                maxLength={100}
+                value={newClient.clientName}
+                onChange={(e) => setNewClient({ ...newClient, clientName: e.target.value })}
+                required
+              />
+              <select
+                className={inputClass}
+                value={newClient.tokenEndpointAuthMethod}
+                onChange={(e) =>
+                  setNewClient({
+                    ...newClient,
+                    tokenEndpointAuthMethod: e.target.value as OAuthTokenEndpointAuthMethod,
+                  })
+                }
+              >
+                <option value="client_secret_basic">client_secret_basic</option>
+                <option value="client_secret_post">client_secret_post</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">
+                Redirect URIs (one per line)
+              </label>
+              <textarea
+                className={`${inputClass} font-mono text-xs`}
+                rows={3}
+                value={newClient.redirectUris}
+                onChange={(e) => setNewClient({ ...newClient, redirectUris: e.target.value })}
+                required
+              />
+            </div>
+            {createClientErr && <p className="text-sm text-red-600">{createClientErr}</p>}
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={creatingClient}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {creatingClient ? "Creating..." : "Create"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowNewClient(false)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {clientsErr && <p className="mb-3 text-sm text-red-600">{clientsErr}</p>}
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 font-medium text-gray-500">Name</th>
+                <th className="px-4 py-3 font-medium text-gray-500">Client ID</th>
+                <th className="px-4 py-3 font-medium text-gray-500">Redirect URIs</th>
+                <th className="px-4 py-3 font-medium text-gray-500">Type</th>
+                <th className="px-4 py-3 font-medium text-gray-500"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {clientsLoading && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    Loading...
+                  </td>
+                </tr>
+              )}
+              {!clientsLoading &&
+                clients.map((cl) => (
+                  <tr key={cl.clientId}>
+                    <td className="px-4 py-3 text-gray-900">{cl.clientName || "Unnamed"}</td>
+                    <td className="max-w-[160px] truncate px-4 py-3 font-mono text-xs text-gray-500" title={cl.clientId}>
+                      {cl.clientId}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                      {cl.redirectUris.map((u) => (
+                        <div key={u} className="max-w-[240px] truncate" title={u}>
+                          {u}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {cl.confidential ? "Confidential" : "Public"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {confirmDeleteClientId === cl.clientId ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Delete and revoke all its grants?</span>
+                          <button
+                            onClick={() => handleDeleteClient(cl.clientId)}
+                            disabled={deletingClientId === cl.clientId}
+                            className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                          >
+                            {deletingClientId === cl.clientId ? "Deleting..." : "Confirm"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteClientId(null)}
+                            disabled={deletingClientId === cl.clientId}
+                            className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteClientId(cl.clientId)}
+                          className="text-xs text-red-500 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              {!clientsLoading && !clients.length && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    No OAuth clients registered.
                   </td>
                 </tr>
               )}

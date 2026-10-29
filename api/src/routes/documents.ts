@@ -2,6 +2,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { eq, and } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { documents, trips, participants } from "../db/schema";
+import { ServiceError } from "../services/errors";
 import {
   DocumentSchema,
   CreateDocumentSchema,
@@ -39,7 +40,7 @@ app.openapi(
         .from(participants)
         .where(and(eq(participants.tripId, tripId), eq(participants.userId, user.id)))
         .limit(1);
-      if (!membership.length) return c.json({ error: "Trip not found" }, 404);
+      if (!membership.length) throw new ServiceError("not_found", "Trip not found");
     }
     const result = await db
       .select()

@@ -1,0 +1,287 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DELETE /trips/:tripId/expenses/:expenseId > admin 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/expenses/:expenseId > editor 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/expenses/:expenseId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`DELETE /trips/:tripId/expenses/:expenseId > owner 1`] = `null`;
+
+exports[`DELETE /trips/:tripId/expenses/:expenseId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`GET /trips/:tripId/expenses > admin 1`] = `
+[
+  {
+    "amount": 88.4,
+    "category": "Food",
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "description": "Dinner",
+    "id": "<ex:dinner>",
+    "payerId": "<ownerP>",
+    "splitType": "EQUAL",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "amount": 12,
+    "category": "Transport",
+    "createdAt": "<timestamp>",
+    "currency": "USD",
+    "description": "Taxi",
+    "id": "<ex:taxi>",
+    "payerId": null,
+    "splitType": "EXACT",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/expenses > editor 1`] = `
+[
+  {
+    "amount": 88.4,
+    "category": "Food",
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "description": "Dinner",
+    "id": "<ex:dinner>",
+    "payerId": "<ownerP>",
+    "splitType": "EQUAL",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "amount": 12,
+    "category": "Transport",
+    "createdAt": "<timestamp>",
+    "currency": "USD",
+    "description": "Taxi",
+    "id": "<ex:taxi>",
+    "payerId": null,
+    "splitType": "EXACT",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/expenses > outsider 1`] = `
+{
+  "error": "Trip not found",
+}
+`;
+
+exports[`GET /trips/:tripId/expenses > owner 1`] = `
+[
+  {
+    "amount": 88.4,
+    "category": "Food",
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "description": "Dinner",
+    "id": "<ex:dinner>",
+    "payerId": "<ownerP>",
+    "splitType": "EQUAL",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "amount": 12,
+    "category": "Transport",
+    "createdAt": "<timestamp>",
+    "currency": "USD",
+    "description": "Taxi",
+    "id": "<ex:taxi>",
+    "payerId": null,
+    "splitType": "EXACT",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`GET /trips/:tripId/expenses > viewer 1`] = `
+[
+  {
+    "amount": 88.4,
+    "category": "Food",
+    "createdAt": "<timestamp>",
+    "currency": "EUR",
+    "description": "Dinner",
+    "id": "<ex:dinner>",
+    "payerId": "<ownerP>",
+    "splitType": "EQUAL",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+  {
+    "amount": 12,
+    "category": "Transport",
+    "createdAt": "<timestamp>",
+    "currency": "USD",
+    "description": "Taxi",
+    "id": "<ex:taxi>",
+    "payerId": null,
+    "splitType": "EXACT",
+    "tripId": "<trip>",
+    "updatedAt": "<timestamp>",
+  },
+]
+`;
+
+exports[`POST /trips/:tripId/expenses > admin 1`] = `
+{
+  "amount": 30,
+  "category": "Entertainment",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Museum tickets",
+  "id": "<uuid:1>",
+  "payerId": "<editorP>",
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/expenses > editor 1`] = `
+{
+  "amount": 30,
+  "category": "Entertainment",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Museum tickets",
+  "id": "<uuid:1>",
+  "payerId": "<editorP>",
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/expenses > invalid body is a 400 zod error and nothing is written 1`] = `
+{
+  "error": {
+    "message": "[
+  {
+    "origin": "number",
+    "code": "too_small",
+    "minimum": 0,
+    "inclusive": false,
+    "path": [
+      "amount"
+    ],
+    "message": "Too small: expected number to be >0"
+  },
+  {
+    "origin": "string",
+    "code": "too_big",
+    "maximum": 3,
+    "inclusive": true,
+    "exact": true,
+    "path": [
+      "currency"
+    ],
+    "message": "Too big: expected string to have <=3 characters"
+  }
+]",
+    "name": "ZodError",
+  },
+  "success": false,
+}
+`;
+
+exports[`POST /trips/:tripId/expenses > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`POST /trips/:tripId/expenses > owner 1`] = `
+{
+  "amount": 30,
+  "category": "Entertainment",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Museum tickets",
+  "id": "<uuid:1>",
+  "payerId": "<editorP>",
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`POST /trips/:tripId/expenses > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`PUT /trips/:tripId/expenses/:expenseId > admin 1`] = `
+{
+  "amount": 99.99,
+  "category": "Other",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Dinner",
+  "id": "<ex:dinner>",
+  "payerId": null,
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/expenses/:expenseId > editor 1`] = `
+{
+  "amount": 99.99,
+  "category": "Other",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Dinner",
+  "id": "<ex:dinner>",
+  "payerId": null,
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/expenses/:expenseId > outsider 1`] = `
+{
+  "error": "Forbidden",
+}
+`;
+
+exports[`PUT /trips/:tripId/expenses/:expenseId > owner 1`] = `
+{
+  "amount": 99.99,
+  "category": "Other",
+  "createdAt": "<timestamp>",
+  "currency": "EUR",
+  "description": "Dinner",
+  "id": "<ex:dinner>",
+  "payerId": null,
+  "splitType": "EQUAL",
+  "tripId": "<trip>",
+  "updatedAt": "<timestamp>",
+}
+`;
+
+exports[`PUT /trips/:tripId/expenses/:expenseId > viewer 1`] = `
+{
+  "error": "Forbidden",
+}
+`;

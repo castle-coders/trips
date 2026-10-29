@@ -2,8 +2,21 @@ name = "trips-api"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+# Required by the OAuth provider's CIMD support (clientIdMetadataDocumentEnabled,
+# TDD 7.1): the library refuses CIMD at runtime without it (MCP_SPIKE_RESULTS
+# 10). With it, every outbound fetch() goes to the public Internet, even for
+# hostnames on this Worker's own zone, so a client metadata URL cannot reach an
+# origin directly. nodejs_compat is not needed (spike 1).
+compatibility_flags = ["global_fetch_strictly_public"]
+
+# The MCP hostname (Stage 2) is not committed. The deploy workflow replaces
+# the MCP_ROUTE_PLACEHOLDER comment line below with the Custom Domain
+#   { pattern = "<mcp-host>", custom_domain = true },
+# only when the MCP_HOST repository secret is set. Cloudflare then creates
+# the DNS record and certificate. Without it the line stays a comment.
 routes = [
-  { pattern = "PROD_ROUTE_PLACEHOLDER", zone_name = "PROD_ZONE_PLACEHOLDER" }
+  { pattern = "PROD_ROUTE_PLACEHOLDER", zone_name = "PROD_ZONE_PLACEHOLDER" },
+  # MCP_ROUTE_PLACEHOLDER
 ]
 
 [vars]
@@ -12,6 +25,18 @@ CF_ACCESS_AUDIENCE = "3af39f6c701b3903969a5b09993f6994dcbaff170711173d037e2bcb95
 CF_ACCESS_INVITE_AUDIENCE = "e2dee13f747a3dcbfdc479eb46d12aa62acf7217581fc256137b824f15cc1b01"
 BOOTSTRAP_ADMIN_EMAIL = "admin@trips.dev"
 EXTERNAL_EVAL_KEY_ID = "eval-key-1"
+# Stage 2 (OAuth on the MCP hostname). Empty by default, which keeps Stage 2
+# inert: the dispatcher only enters the OAuth provider when MCP_HOST is
+# non-empty and equals the request hostname. Real values are injected at
+# deploy time with `wrangler deploy --var NAME:value` from GitHub repository
+# secrets of the same name (.github/workflows/deploy-api.yml). For local dev,
+# set them in a gitignored env file (see .dev.vars.example).
+MCP_HOST = ""                  # bare hostname <mcp-host>, no scheme or path
+MCP_PUBLIC_URL = ""            # https://<mcp-host>/mcp, the OAuth resource id
+ACCESS_AUTHORIZATION_URL = ""  # Access for SaaS OIDC authorization endpoint
+ACCESS_TOKEN_URL = ""          # Access for SaaS OIDC token endpoint
+ACCESS_JWKS_URL = ""           # Access for SaaS OIDC JWKS endpoint
+ACCESS_ISSUER = ""             # Access for SaaS OIDC issuer (id_token iss)
 
 [observability]
 enabled = true
@@ -22,8 +47,32 @@ database_name = "trips-db"
 database_id = "PROD_DB_ID_PLACEHOLDER"
 migrations_dir = "drizzle"
 
+# OAuth provider storage (clients, grants, hashed tokens, consent handles,
+# upstream state). The id is replaced by the deploy workflow from the
+# CLOUDFLARE_KV_OAUTH_ID secret, like the D1 id above. Local dev and tests
+# use a local Miniflare namespace.
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "OAUTH_KV_ID_PLACEHOLDER"
+
 [[unsafe.bindings]]
 name = "EVAL_RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+# Per user, keyed on userId (the resolved Trips user, not IP). Limits MCP tool
+# calls on /api/mcp (Stage 1) and the MCP hostname (Stage 2).
+[[unsafe.bindings]]
+name = "MCP_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 120, period = 60 }
+
+# Per IP, keyed on cf-connecting-ip. Applied by the dispatcher to the OAuth
+# endpoints on the MCP hostname (/authorize, /oauth/token, /oauth/register).
+[[unsafe.bindings]]
+name = "OAUTH_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1003"
 simple = { limit = 30, period = 60 }

@@ -18,6 +18,8 @@ There is no `/auth/login` endpoint. Authentication is handled entirely by Cloudf
 
 **OpenAPI Spec:** Available at `GET /openapi.json` for full schema details. Interactive docs at `GET /docs`. See the [OpenAPI Documentation](#openapi-documentation) section below for usage details.
 
+**MCP alternative:** The same trip, itinerary and expense capabilities are also available as MCP tools, with the same roles and Viewer projection. Use `/api/mcp` on the app host with a Cloudflare Access service token (Stage 1), or `${MCP_PUBLIC_URL}` with OAuth sign-in (Stage 2). The MCP tools can't delete anything and don't cover participants, invites or documents. See [MCP server](README.md#mcp-server) for the tools and connection steps.
+
 ## Core Capabilities
 
 ### 1. Parse Forwarded Itineraries & Confirmations

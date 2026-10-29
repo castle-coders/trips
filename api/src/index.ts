@@ -14,9 +14,26 @@ import documentRoutes from "./routes/documents";
 import itineraryRoutes from "./routes/itineraries";
 import inviteRoutes from "./routes/invites";
 import evalRoutes from "./routes/eval";
+import mcpStage1 from "./mcp/stage1";
 import { cors } from "hono/cors";
+import { ServiceError, SERVICE_ERROR_STATUS, serviceErrorBody } from "./services/errors";
+import { getOAuthProvider, OAUTH_RATE_LIMITED_PATHS } from "./oauth/provider";
 
 const app = new OpenAPIHono<Env>();
+
+// Map service-layer errors to HTTP. Anything else keeps Hono's default handler behavior
+// (HTTPException -> its response; otherwise log and 500 "Internal Server Error").
+app.onError((err, c) => {
+  if (err instanceof ServiceError) {
+    return c.json(serviceErrorBody(err), SERVICE_ERROR_STATUS[err.code]);
+  }
+  if ("getResponse" in err) {
+    const res = err.getResponse();
+    return c.newResponse(res.body, res);
+  }
+  console.error(err);
+  return c.text("Internal Server Error", 500);
+});
 
 app.use("*", (c, next) => {
   const allowedOrigins = ["http://localhost:5173", c.env.WEB_APP_ORIGIN].filter(Boolean);
@@ -72,10 +89,47 @@ app.route("/trips/:tripId/documents", documentRoutes);
 app.route("/trips/:tripId/itineraries", itineraryRoutes);
 app.route("/trips/:tripId/invites", inviteRoutes);
 app.route("/admin", adminRoutes);
+// MCP (Cloudflare Access); the route itself applies authMiddleware, so /api/mcp is never unauthenticated
+app.route("/", mcpStage1);
+
+/** Query parameters that look like credentials. Tokens are accepted only in the Authorization header. */
+const QUERY_CREDENTIAL_PARAMS: ReadonlySet<string> = new Set(["token", "access_token", "apikey"]);
+
+function hasQueryCredential(url: URL): boolean {
+  for (const name of url.searchParams.keys()) {
+    if (QUERY_CREDENTIAL_PARAMS.has(name.toLowerCase())) return true;
+  }
+  return false;
+}
+
+/** Stage 2: everything on the MCP hostname goes through the OAuth provider (TDD 5). No CORS here. */
+async function handleMcpHost(request: Request, url: URL, env: Env["Bindings"], ctx: ExecutionContext): Promise<Response> {
+  // Before the provider: otherwise a query-only token gets the library's 401 first (spike 8).
+  if (hasQueryCredential(url)) {
+    return Response.json(
+      { error: "invalid_request", error_description: "Credentials must be sent in the Authorization header, not the URL" },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  // Per-IP limit on the OAuth endpoints; the library serves token and registration itself.
+  if (OAUTH_RATE_LIMITED_PATHS.has(url.pathname) && env.OAUTH_RATE_LIMITER) {
+    const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+    const { success } = await env.OAUTH_RATE_LIMITER.limit({ key: ip });
+    if (!success) {
+      return Response.json({ error: "Too many requests" }, { status: 429 });
+    }
+  }
+  return getOAuthProvider(env).fetch(request, env, ctx);
+}
 
 export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {
     const url = new URL(request.url);
+    const bindings = env as Env["Bindings"];
+    // URL.hostname is always lowercase, so compare case-insensitively.
+    if (bindings.MCP_HOST && url.hostname === bindings.MCP_HOST.toLowerCase()) {
+      return handleMcpHost(request, url, bindings, ctx);
+    }
     if (url.pathname.startsWith("/api/") || url.pathname === "/api") {
       url.pathname = url.pathname.slice(4) || "/";
       request = new Request(url, request);
