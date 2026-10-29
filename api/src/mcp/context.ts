@@ -54,6 +54,7 @@ export async function loadRequestContext(
   if (typeof userId !== "string" || !userId) throw new Error("MCP request has no authenticated user");
   const channel = readChannel(authInfo?.extra?.channel);
   const clientId = readStringOrNull(authInfo?.extra?.clientId, "clientId");
+  const clientName = readStringOrNull(authInfo?.extra?.clientName, "clientName");
   const requestId = readStringOrNull(authInfo?.extra?.requestId, "requestId");
 
   const db = getDb(env.DB);
@@ -66,7 +67,7 @@ export async function loadRequestContext(
 
   return {
     db,
-    user: { ...rows[0], channel, clientId, requestId },
+    user: { ...rows[0], channel, clientId, clientName, requestId },
     scopes: [...(authInfo?.scopes ?? [])],
     log: (event, fields) => {
       const parts = Object.entries(fields).map(([k, v]) => `${k}=${String(v)}`);

@@ -7,6 +7,10 @@ import type {
   OAuthClient,
   CreatedOAuthClient,
   CreateOAuthClientInput,
+  AuditPage,
+  AuditQuery,
+  AuditEntityQuery,
+  AdminAuditQuery,
 } from "./types";
 
 const BASE = "/api";
@@ -39,6 +43,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
   return res.json();
+}
+
+/**
+ * Builds a query string from an object, dropping undefined, null and empty-string values.
+ * Returns "" when nothing remains, otherwise "?a=1&b=2".
+ */
+function qs(params: object): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const s = search.toString();
+  return s ? `?${s}` : "";
 }
 
 // Trips
@@ -85,6 +103,16 @@ export const itineraries = {
     }),
   delete: (tripId: string, id: string) =>
     request<void>(`/trips/${tripId}/itineraries/${id}`, { method: "DELETE" }),
+};
+
+// Audit history (Editor or Owner on the trip; the API enforces the role independently)
+export const audit = {
+  trip: (tripId: string, q: AuditQuery = {}) =>
+    request<AuditPage>(`/trips/${encodeURIComponent(tripId)}/audit${qs(q)}`),
+  entity: (tripId: string, entityType: string, entityId: string, q: AuditEntityQuery = {}) =>
+    request<AuditPage>(
+      `/trips/${encodeURIComponent(tripId)}/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}${qs(q)}`
+    ),
 };
 
 // Account self-service
@@ -239,6 +267,9 @@ export const admin = {
     }),
   deleteOAuthClient: (clientId: string) =>
     request<void>(`/admin/oauth-clients/${encodeURIComponent(clientId)}`, { method: "DELETE" }),
+
+  // Audit log across all trips and administration events; each event carries requestId.
+  audit: (q: AdminAuditQuery = {}) => request<AuditPage>(`/admin/audit${qs(q)}`),
 };
 
 // OAuth display helpers

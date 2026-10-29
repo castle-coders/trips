@@ -18,6 +18,7 @@ stage1.all("/mcp", authMiddleware, mcpRateLimit, async (c) => {
       userId: user.id,
       channel: "mcp_stage1",
       clientId: user.clientId,
+      clientName: user.clientName,
       requestId: requestIdFrom(c.req.header("cf-ray")),
     },
   };

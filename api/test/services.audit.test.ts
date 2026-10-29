@@ -31,7 +31,7 @@ import { IDS, errorOf, expectServiceError, seedRoleWorld, testDb, type Actor as 
 import { auditRows, seedEvent, seedManyEvents, seedRawEvent, toActor } from "./helpers/audit";
 
 let w: RoleWorld;
-const actor = (a: Role, overrides: Partial<Pick<DbActor, "channel" | "clientId" | "requestId">> = {}): DbActor =>
+const actor = (a: Role, overrides: Partial<Pick<DbActor, "channel" | "clientId" | "clientName" | "requestId">> = {}): DbActor =>
   toActor(w.users[a], overrides);
 
 beforeEach(async () => {
@@ -204,7 +204,7 @@ describe("auditInsert", () => {
   it("fills actor columns, id, createdAt from the Actor and the clock", async () => {
     const t0 = Date.now();
     await auditInsert(testDb(), {
-      actor: actor("owner", { channel: "mcp_oauth", clientId: "client-fake-1", requestId: "ray-abc" }),
+      actor: actor("owner", { channel: "mcp_oauth", clientId: "client-fake-1", clientName: "Fake Client", requestId: "ray-abc" }),
       tripId: IDS.trip,
       entityType: "trip",
       entityId: IDS.trip,
@@ -219,6 +219,7 @@ describe("auditInsert", () => {
       actorRole: "editor",
       channel: "mcp_oauth",
       clientId: "client-fake-1",
+      clientName: "Fake Client",
       requestId: "ray-abc",
     });
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);

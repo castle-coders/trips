@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "vitest run",
+    "check:audit": "sh scripts/check-audit-append-only.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply trips-db --local",
     "db:studio": "drizzle-kit studio"

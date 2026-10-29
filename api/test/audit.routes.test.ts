@@ -225,6 +225,7 @@ describe("response shape", () => {
       actorRole: "editor",
       channel: "web",
       clientId: null,
+      clientName: null,
       before: { id: E.expense1, tripId: IDS.trip, description: "Taxi", amount: 10 },
       after: { id: E.expense1, tripId: IDS.trip, description: "Taxi", amount: 12 },
       changes: { amount: { from: 10, to: 12 } },
@@ -234,7 +235,7 @@ describe("response shape", () => {
     expect(create.before).toBeNull();
     expect(create.changes).toBeNull();
     expect(Object.keys(update).sort()).toEqual(
-      ["action", "actorEmail", "actorName", "actorRole", "actorUserId", "after", "before", "changes", "channel", "clientId", "createdAt", "entityId", "entityLabel", "entityType", "id", "metadata", "tripId"].sort()
+      ["action", "actorEmail", "actorName", "actorRole", "actorUserId", "after", "before", "changes", "channel", "clientId", "clientName", "createdAt", "entityId", "entityLabel", "entityType", "id", "metadata", "tripId"].sort()
     );
     expect(Object.keys(update)).not.toContain("seq");
   });

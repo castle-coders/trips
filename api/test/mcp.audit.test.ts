@@ -84,6 +84,8 @@ const FAKE_TEAM_DOMAIN = "fake-team.access.example.test";
 const FAKE_AUDIENCE = "fake-access-audience-tag-0000";
 const FAKE_CERTS_URL = `https://${FAKE_TEAM_DOMAIN}/cdn-cgi/access/certs`;
 const FAKE_SERVICE_COMMON_NAME = "fake-audit-service-token.access";
+/** The `client_name` the Stage 2 sign-in flow registers through DCR; the audit row must carry it verbatim. */
+const FAKE_OAUTH_CLIENT_NAME = "Fake Audit Agent";
 const accessKeys = await generateKeyPair("RS256");
 const ACCESS_JWK = { ...(await exportJWK(accessKeys.publicKey)), kid: "fake-access-kid-audit", alg: "RS256", use: "sig" };
 
@@ -164,6 +166,7 @@ describe("Stage 1 (dev header): every write tool records one mcp_stage1 event fo
         ...actorSnapshot(w.users.owner),
         channel: "mcp_stage1",
         clientId: null,
+        clientName: null,
         requestId: ray,
       });
       // The event points at the row the tool created or changed.
@@ -223,6 +226,7 @@ describe("Stage 1 (Access service token): clientId is the service identity commo
         ...actorSnapshot(w.users.owner),
         channel: "mcp_stage1",
         clientId: FAKE_SERVICE_COMMON_NAME,
+        clientName: FAKE_SERVICE_COMMON_NAME,
         requestId: "ray-svc-0001",
       });
     }
@@ -236,9 +240,9 @@ describe("Stage 1 (Access service token): clientId is the service identity commo
 });
 
 describe("Stage 2 (OAuth bearer token): mcp_oauth with the flow's client id, attributed to the human", () => {
-  it("update_itinerary records channel mcp_oauth, clientId = registered client id, actor = user, requestId = cf-ray", async () => {
+  it("update_itinerary records channel mcp_oauth, clientId = registered client id, clientName = registered client_name, actor = user, requestId = cf-ray", async () => {
     const w = await seedMcpWorld();
-    const { clientId, tokens } = await signIn(w.users.editor.email, { ticked: ["trips:read", "trips:write"] });
+    const { clientId, tokens } = await signIn(w.users.editor.email, { ticked: ["trips:read", "trips:write"], clientName: FAKE_OAUTH_CLIENT_NAME });
     const before = await auditRows(); // the sign-in may record OAuth administration events; exclude them
     const ray = "ray-stage2-0001";
 
@@ -255,6 +259,7 @@ describe("Stage 2 (OAuth bearer token): mcp_oauth with the flow's client id, att
       action: "update",
       channel: "mcp_oauth",
       clientId,
+      clientName: FAKE_OAUTH_CLIENT_NAME,
       requestId: ray,
     });
     expect(added[0].changes).toEqual({
@@ -286,7 +291,7 @@ describe("Stage 2 (OAuth bearer token): mcp_oauth with the flow's client id, att
     }
   });
 
-  it("PRD acceptance 2: a flight departure-time change over Stage 2 is the same event as over REST, except channel and clientId", async () => {
+  it("PRD acceptance 2: a flight departure-time change over Stage 2 is the same event as over REST, except channel, clientId and clientName", async () => {
     const w = await seedMcpWorld();
     const p = w.participants.editor.id;
     // Two flights with identical content so the same patch can go through both paths.
@@ -313,7 +318,7 @@ describe("Stage 2 (OAuth bearer token): mcp_oauth with the flow's client id, att
 
     // Identical apart from the per-row identity and the channel attribution.
     const strip = (e: AuditRow) => {
-      const { id, seq, createdAt, entityId, channel, clientId, requestId, before, after, ...rest } = e;
+      const { id, seq, createdAt, entityId, channel, clientId, clientName, requestId, before, after, ...rest } = e;
       return rest;
     };
     expect(strip(mcpEvent)).toEqual(strip(restEvent));
@@ -427,13 +432,13 @@ describe("No-op update_itinerary", () => {
 describe("loadRequestContext attribution fields", () => {
   const env = () => stage2Env();
 
-  it("copies channel, clientId and requestId from authInfo.extra onto the Actor", async () => {
+  it("copies channel, clientId, clientName and requestId from authInfo.extra onto the Actor", async () => {
     const w = await seedMcpWorld();
     const rc = await loadRequestContext(env(), {
       token: "",
       clientId: "svc",
       scopes: ["trips:read"],
-      extra: { userId: w.users.owner.id, channel: "mcp_stage1", clientId: "svc-name", requestId: "ray-unit" },
+      extra: { userId: w.users.owner.id, channel: "mcp_stage1", clientId: "svc-name", clientName: "Svc Display Name", requestId: "ray-unit" },
     });
     expect(rc.user).toEqual({
       id: w.users.owner.id,
@@ -442,14 +447,15 @@ describe("loadRequestContext attribution fields", () => {
       role: "editor",
       channel: "mcp_stage1",
       clientId: "svc-name",
+      clientName: "Svc Display Name",
       requestId: "ray-unit",
     });
   });
 
-  it("defaults to mcp_oauth with null clientId and requestId when extra carries only userId", async () => {
+  it("defaults to mcp_oauth with null clientId, clientName and requestId when extra carries only userId", async () => {
     const w = await seedMcpWorld();
     const rc = await loadRequestContext(env(), authFor(w.users.owner.id));
-    expect(rc.user).toMatchObject({ channel: "mcp_oauth", clientId: null, requestId: null });
+    expect(rc.user).toMatchObject({ channel: "mcp_oauth", clientId: null, clientName: null, requestId: null });
   });
 
   it("rejects an unknown channel string", async () => {
@@ -461,6 +467,7 @@ describe("loadRequestContext attribution fields", () => {
   for (const [field, value] of [
     ["channel", 42],
     ["clientId", { id: "x" }],
+    ["clientName", 7],
     ["requestId", ["ray"]],
   ] as const) {
     it(`rejects a non-string ${field}`, async () => {

@@ -8,10 +8,10 @@ import { testDb } from "./db";
 
 export type AuditRow = typeof auditEvents.$inferSelect;
 
-/** Actor as the auth middleware would build it for a web request. Overrides set channel/clientId/requestId. */
+/** Actor as the auth middleware would build it for a web request. Overrides set channel/clientId/clientName/requestId. */
 export function toActor(
   u: { id: string; email: string; name: string; role: string },
-  overrides: Partial<Pick<Actor, "channel" | "clientId" | "requestId">> = {}
+  overrides: Partial<Pick<Actor, "channel" | "clientId" | "clientName" | "requestId">> = {}
 ): Actor {
   return {
     id: u.id,
@@ -20,6 +20,7 @@ export function toActor(
     role: u.role,
     channel: "web",
     clientId: null,
+    clientName: null,
     requestId: "ray-test",
     ...overrides,
   };
@@ -98,6 +99,7 @@ export async function seedRawEvent(
       actorRole: actor.role,
       channel: actor.channel,
       clientId: actor.clientId,
+      clientName: actor.clientName,
       requestId: actor.requestId,
       tripId: null,
       entityType: "trip",

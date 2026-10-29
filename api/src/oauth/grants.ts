@@ -26,6 +26,7 @@
 import { getOAuthApi, type ClientInfo, type GrantSummary, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { getDb } from "../db";
 import { users } from "../db/schema";
+import { isCimdClientId, lookupClientName, type ClientNameCache } from "./client-name";
 import { logField, type Bindings } from "./http";
 import { buildProviderOptions } from "./provider";
 import { isAllowedRedirect } from "./redirects";
@@ -71,26 +72,8 @@ async function allUserGrants(api: OAuthHelpers, userId: string): Promise<GrantSu
   return out;
 }
 
-function isCimdClientId(clientId: string): boolean {
-  return /^https?:\/\//i.test(clientId);
-}
-
-/** Per-request client-name cache, so N grants for one client cost one lookup. */
-type ClientNameCache = Map<string, Promise<string | null>>;
-
-function clientName(api: OAuthHelpers, cache: ClientNameCache, clientId: string): Promise<string | null> {
-  let hit = cache.get(clientId);
-  if (!hit) {
-    hit = isCimdClientId(clientId)
-      ? Promise.resolve(null)
-      : api.lookupClient(clientId).then(
-          (c) => c?.clientName ?? null,
-          () => null,
-        );
-    cache.set(clientId, hit);
-  }
-  return hit;
-}
+/** Per-request client-name cache, so N grants for one client cost one lookup (see client-name.ts). */
+const clientName = lookupClientName;
 
 function isoFromEpochSeconds(seconds: number | undefined): string | null {
   return typeof seconds === "number" && Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null;

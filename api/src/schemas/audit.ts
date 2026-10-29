@@ -33,6 +33,10 @@ export const AuditEventSchema = z
     actorRole: z.string(),
     channel: z.enum(STORED_CHANNELS),
     clientId: z.string().nullable().openapi({ description: "OAuth client id or service identity common name" }),
+    clientName: z
+      .string()
+      .nullable()
+      .openapi({ description: "Registered OAuth client name or service identity common name; null for web, dev and unknown clients" }),
     requestId: z.string().nullable().optional().openapi({ description: "Cloudflare cf-ray. Present only on /admin/audit." }),
     tripId: z.string().uuid().nullable().openapi({ description: "Null for administration events" }),
     entityType: EntityTypeSchema,
@@ -56,11 +60,7 @@ export const AuditPageSchema = z
   })
   .openapi("AuditPage");
 
-/**
- * The wire shape of a page. The service's `AuditEventView` types `channel`, `entityType` and
- * `action` as `string` (they are plain text columns); the stored values are only ever the
- * enum members the service wrote, so routes cast its page to this type.
- */
+/** The wire shape of a page; structurally identical to the service's `AuditPage`. */
 export type AuditPageResponse = z.infer<typeof AuditPageSchema>;
 
 // --- Query parameters ---

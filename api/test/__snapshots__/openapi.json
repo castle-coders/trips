@@ -1079,6 +1079,11 @@
             "nullable": true,
             "description": "OAuth client id or service identity common name"
           },
+          "clientName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Registered OAuth client name or service identity common name; null for web, dev and unknown clients"
+          },
           "requestId": {
             "type": "string",
             "nullable": true,
@@ -1151,6 +1156,7 @@
           "actorRole",
           "channel",
           "clientId",
+          "clientName",
           "tripId",
           "entityType",
           "entityId",

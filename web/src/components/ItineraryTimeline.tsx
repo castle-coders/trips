@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Itinerary } from "../lib/types";
-import { Plane, Bed, TrainFront, Car, Utensils, Bus, MapPin, Map as MapIcon } from "lucide-react";
+import { Plane, Bed, TrainFront, Car, Utensils, Bus, MapPin, Map as MapIcon, History } from "lucide-react";
 
 const getTypeIcon = (type: string) => {
   const props = { className: "w-3 h-3" };
@@ -278,11 +278,14 @@ export function ItineraryTimeline({
   items,
   onEdit,
   onDelete,
+  onHistory,
   showCost = true,
 }: {
   items: Itinerary[];
   onEdit?: (item: Itinerary) => void;
   onDelete?: (item: Itinerary) => void;
+  /** Opens the item's audit history (rendered only when provided, i.e. for Editor+). */
+  onHistory?: (item: Itinerary) => void;
   showCost?: boolean;
 }) {
   const entries = buildEntries(items);
@@ -355,6 +358,19 @@ export function ItineraryTimeline({
                     </button>
                   )}
                 </div>
+                {onHistory && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onHistory(entry.item);
+                    }}
+                    className="ml-auto shrink-0 rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600"
+                    title="History"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                )}
                 {onDelete && (
                   <button
                     type="button"

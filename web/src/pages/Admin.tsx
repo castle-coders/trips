@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy } from "lucide-react";
 import {
@@ -12,12 +12,62 @@ import {
 } from "../lib/api";
 import type {
   AdminOAuthGrant,
+  AuditAction,
+  AuditEntityType,
+  AuditLiveChannel,
+  AuditLoader,
   CreatedOAuthClient,
   OAuthClient,
   OAuthTokenEndpointAuthMethod,
 } from "../lib/types";
+import { channelLabel } from "../lib/auditText";
+import { ActivityFeed } from "../components/ActivityFeed";
 
 const grantKey = (g: AdminOAuthGrant) => `${g.userId}:${g.id}`;
+
+// Audit log filter options (specs/AUDIT_TDD.md section 9.4). Values mirror api/src/schemas/audit.ts.
+const AUDIT_CHANNELS: AuditLiveChannel[] = ["web", "service_token", "mcp_stage1", "mcp_oauth", "dev"];
+
+const AUDIT_ENTITY_TYPES: Array<{ value: AuditEntityType; label: string }> = [
+  { value: "trip", label: "Trip" },
+  { value: "itinerary", label: "Itinerary item" },
+  { value: "expense", label: "Expense" },
+  { value: "participant", label: "Participant" },
+  { value: "document", label: "Document" },
+  { value: "invite", label: "Invite" },
+  { value: "user", label: "User" },
+  { value: "user_email", label: "User email" },
+  { value: "service_identity", label: "Service identity" },
+  { value: "oauth_grant", label: "Connected app" },
+  { value: "oauth_client", label: "OAuth client" },
+];
+
+const AUDIT_ACTIONS: Array<{ value: AuditAction; label: string }> = [
+  { value: "create", label: "Create" },
+  { value: "update", label: "Update" },
+  { value: "delete", label: "Delete" },
+  { value: "accept", label: "Accept" },
+  { value: "merge", label: "Merge" },
+  { value: "link", label: "Link" },
+  { value: "unlink", label: "Unlink" },
+  { value: "set_primary", label: "Set primary" },
+  { value: "revoke", label: "Revoke" },
+];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Delay before free-text audit filters are sent, so each keystroke does not fire a request. */
+const AUDIT_TEXT_DEBOUNCE_MS = 300;
+
+/** Returns `value` after it has been stable for `delayMs`. */
+function useDebounced(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 export function Admin() {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -242,6 +292,70 @@ export function Admin() {
       setDeletingClientId(null);
       setConfirmDeleteClientId(null);
     }
+  };
+
+  // Audit log filters. Empty string means "no filter"; the query helper drops empty values.
+  const [auditTripId, setAuditTripId] = useState("");
+  const [auditActorUserId, setAuditActorUserId] = useState("");
+  const [auditChannel, setAuditChannel] = useState<AuditLiveChannel | "">("");
+  const [auditClientId, setAuditClientId] = useState("");
+  const [auditEntityType, setAuditEntityType] = useState<AuditEntityType | "">("");
+  const [auditAction, setAuditAction] = useState<AuditAction | "">("");
+  const [auditSinceDate, setAuditSinceDate] = useState("");
+  const [auditUntilDate, setAuditUntilDate] = useState("");
+  const debouncedTripId = useDebounced(auditTripId.trim(), AUDIT_TEXT_DEBOUNCE_MS);
+  const debouncedClientId = useDebounced(auditClientId.trim(), AUDIT_TEXT_DEBOUNCE_MS);
+  // The API rejects a non-UUID tripId with a 400, so validate here and hold the request until it is valid.
+  const auditTripIdInvalid = debouncedTripId !== "" && !UUID_RE.test(debouncedTripId);
+  const auditDateRangeInvalid =
+    auditSinceDate !== "" && auditUntilDate !== "" && auditSinceDate > auditUntilDate;
+
+  // ActivityFeed reloads from the top whenever this function's identity changes,
+  // so it is keyed on exactly the values that go into the query.
+  const loadAudit = useCallback<AuditLoader>(
+    (cursor) =>
+      admin.audit({
+        cursor: cursor ?? undefined,
+        tripId: debouncedTripId || undefined,
+        actorUserId: auditActorUserId || undefined,
+        channel: auditChannel || undefined,
+        clientId: debouncedClientId || undefined,
+        entityType: auditEntityType || undefined,
+        action: auditAction || undefined,
+        since: auditSinceDate ? `${auditSinceDate}T00:00:00Z` : undefined,
+        until: auditUntilDate ? `${auditUntilDate}T23:59:59.999Z` : undefined,
+      }),
+    [
+      debouncedTripId,
+      auditActorUserId,
+      auditChannel,
+      debouncedClientId,
+      auditEntityType,
+      auditAction,
+      auditSinceDate,
+      auditUntilDate,
+    ]
+  );
+
+  const auditFiltersActive =
+    auditTripId !== "" ||
+    auditActorUserId !== "" ||
+    auditChannel !== "" ||
+    auditClientId !== "" ||
+    auditEntityType !== "" ||
+    auditAction !== "" ||
+    auditSinceDate !== "" ||
+    auditUntilDate !== "";
+
+  const clearAuditFilters = () => {
+    setAuditTripId("");
+    setAuditActorUserId("");
+    setAuditChannel("");
+    setAuditClientId("");
+    setAuditEntityType("");
+    setAuditAction("");
+    setAuditSinceDate("");
+    setAuditUntilDate("");
   };
 
   const inputClass =
@@ -651,7 +765,7 @@ export function Admin() {
       </section>
 
       {/* OAuth clients */}
-      <section>
+      <section className="mb-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">OAuth clients</h2>
           <button
@@ -853,6 +967,139 @@ export function Admin() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Audit log (specs/AUDIT_TDD.md section 9.4) */}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Audit log</h2>
+          {auditFiltersActive && (
+            <button
+              type="button"
+              onClick={clearAuditFilters}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+        <p className="mb-4 text-sm text-gray-500">
+          Every recorded change across all trips, including administration events and deleted trips. Newest first.
+        </p>
+        <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Trip id</span>
+            <input
+              className={inputClass}
+              placeholder="Any trip"
+              value={auditTripId}
+              onChange={(e) => setAuditTripId(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={auditTripIdInvalid || undefined}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Person</span>
+            <select
+              className={inputClass}
+              value={auditActorUserId}
+              onChange={(e) => setAuditActorUserId(e.target.value)}
+            >
+              <option value="">Anyone</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.email})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Channel</span>
+            <select
+              className={inputClass}
+              value={auditChannel}
+              onChange={(e) => setAuditChannel(e.target.value as AuditLiveChannel | "")}
+            >
+              <option value="">Any</option>
+              {AUDIT_CHANNELS.map((c) => (
+                <option key={c} value={c}>
+                  {channelLabel(c)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Client id</span>
+            <input
+              className={inputClass}
+              placeholder="Any client"
+              value={auditClientId}
+              onChange={(e) => setAuditClientId(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Entity type</span>
+            <select
+              className={inputClass}
+              value={auditEntityType}
+              onChange={(e) => setAuditEntityType(e.target.value as AuditEntityType | "")}
+            >
+              <option value="">All</option>
+              {AUDIT_ENTITY_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Action</span>
+            <select
+              className={inputClass}
+              value={auditAction}
+              onChange={(e) => setAuditAction(e.target.value as AuditAction | "")}
+            >
+              <option value="">All</option>
+              {AUDIT_ACTIONS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">From</span>
+            <input
+              className={inputClass}
+              type="date"
+              value={auditSinceDate}
+              max={auditUntilDate || undefined}
+              onChange={(e) => setAuditSinceDate(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">To</span>
+            <input
+              className={inputClass}
+              type="date"
+              value={auditUntilDate}
+              min={auditSinceDate || undefined}
+              onChange={(e) => setAuditUntilDate(e.target.value)}
+            />
+          </label>
+        </div>
+        {auditTripIdInvalid && (
+          <p className="mb-3 text-sm text-red-600">Trip id must be a UUID.</p>
+        )}
+        {auditDateRangeInvalid && (
+          <p className="mb-3 text-sm text-red-600">The From date must not be after the To date.</p>
+        )}
+        {!auditTripIdInvalid && !auditDateRangeInvalid && (
+          <ActivityFeed load={loadAudit} showTrip showRaw emptyText="No events match" />
+        )}
       </section>
     </div>
   );

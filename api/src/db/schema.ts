@@ -149,6 +149,7 @@ export const auditEvents = sqliteTable(
     actorRole: text("actor_role").notNull(),
     channel: text("channel").notNull(), // web | service_token | mcp_stage1 | mcp_oauth | dev | backfill
     clientId: text("client_id"),
+    clientName: text("client_name"), // OAuth client display name (mcp_oauth) or common name (service_token, mcp_stage1); null otherwise
     requestId: text("request_id"),
     tripId: text("trip_id"), // no FK: survives trip deletion; null for admin events
     entityType: text("entity_type").notNull(),

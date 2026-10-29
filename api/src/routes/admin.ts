@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb, type Env } from "../db";
 import { users, userEmails, serviceIdentities } from "../db/schema";
 import { mergeAccounts } from "../lib/merge";
-import { AdminAuditQuerySchema, AuditPageSchema, type AuditPageResponse } from "../schemas/audit";
+import { AdminAuditQuerySchema, AuditPageSchema } from "../schemas/audit";
 import { listAdminEvents, recordEvent } from "../services/audit";
 import {
   createServiceIdentity,
@@ -626,7 +626,7 @@ app.openapi(
   }),
   async (c) => {
     const page = await listAdminEvents(getDb(c.env.DB), c.get("user"), c.req.valid("query"));
-    return c.json(page as AuditPageResponse, 200);
+    return c.json(page, 200);
   }
 );
 

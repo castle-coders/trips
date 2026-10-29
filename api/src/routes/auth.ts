@@ -189,7 +189,7 @@ app.openapi(
 
     // Every write the acceptance causes (name update, participant, invite status) and its audit
     // events run in one batch in the service, with the accepting user as actor.
-    const actor: Actor = { ...authUser, clientId: null, ...audit };
+    const actor: Actor = { ...authUser, clientId: null, clientName: null, ...audit };
     const { resolvedName } = await acceptInvite(db, actor, invite);
 
     // Return HTML redirect for browser form submissions, JSON for API calls
@@ -800,7 +800,7 @@ app.post("/link/:token/confirm", async (c) => {
     if (!authUser) {
       authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL, audit);
     }
-    const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, requestId: audit.requestId };
+    const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, clientName: null, requestId: audit.requestId };
 
     if (keepUserId !== authUser.id) {
       // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands
@@ -945,7 +945,7 @@ app.openapi(
       if (!authUser) {
         authUser = await createUserWithEmail(db, identity.email, identity.name, c.env.BOOTSTRAP_ADMIN_EMAIL, audit);
       }
-      const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, requestId: audit.requestId };
+      const actor: Actor = { ...authUser, channel: audit.channel, clientId: null, clientName: null, requestId: audit.requestId };
 
       if (keepUserId !== authUser.id) {
         // Revoke the merged-away account's OAuth grants before its row is deleted; a throw lands

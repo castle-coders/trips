@@ -270,6 +270,7 @@ export function auditInsert(db: Db, input: EventInput): AuditStatement | null {
     actorRole: actor.role,
     channel: actor.channel,
     clientId: actor.clientId,
+    clientName: actor.clientName,
     requestId: actor.requestId,
     tripId: input.tripId,
     entityType,
@@ -347,7 +348,14 @@ type AuditRow = typeof auditEvents.$inferSelect;
  * The stored row minus `seq`, with the JSON columns typed. `requestId` is present only on
  * admin reads (TDD 6.2).
  */
-export type AuditEventView = Omit<AuditRow, "seq" | "requestId" | "before" | "after" | "changes" | "metadata"> & {
+export type AuditEventView = Omit<
+  AuditRow,
+  "seq" | "requestId" | "before" | "after" | "changes" | "metadata" | "channel" | "entityType" | "action"
+> & {
+  /** Stored values are only ever what this service wrote, so the view narrows the text columns. */
+  channel: Channel | "backfill";
+  entityType: EntityType;
+  action: Action;
   before: Snapshot | null;
   after: Snapshot | null;
   changes: Changes | null;
@@ -372,6 +380,9 @@ function toView(row: AuditRow, includeRequestId: boolean): AuditEventView {
   const { seq: _seq, requestId, ...rest } = row;
   const view: AuditEventView = {
     ...rest,
+    channel: rest.channel as Channel | "backfill",
+    entityType: rest.entityType as EntityType,
+    action: rest.action as Action,
     before: (row.before as Snapshot | null) ?? null,
     after: (row.after as Snapshot | null) ?? null,
     changes: (row.changes as Changes | null) ?? null,

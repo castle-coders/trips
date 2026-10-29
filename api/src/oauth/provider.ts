@@ -20,6 +20,7 @@ import {
   OAuthProvider,
   type ClientRegistrationCallbackOptions,
   type ClientRegistrationCallbackResult,
+  type OAuthHelpers,
   type OAuthProviderOptions,
   type OAuthResourceContext,
 } from "@cloudflare/workers-oauth-provider";
@@ -27,6 +28,7 @@ import { eq } from "drizzle-orm";
 import { getDb, requestIdFrom } from "../db";
 import { users } from "../db/schema";
 import { createTripsMcpHandler } from "../mcp/handler";
+import { lookupClientName, type ClientNameCache } from "./client-name";
 import { oauthDefaultApp } from "./default-handler";
 import { logField, type Bindings } from "./http";
 import { checkRedirectUris } from "./redirects";
@@ -101,6 +103,34 @@ async function userExists(env: Bindings, userId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/**
+ * Per-isolate cache of OAuth client display names for audit attribution (AUDIT_PRD 6.6). Each
+ * MCP tool call is one request, so without this every call would cost a KV `lookupClient` read.
+ * Entries expire so a renamed client is picked up within `CLIENT_NAME_TTL_MS`; the map is cleared
+ * outright when it grows past `CLIENT_NAME_CACHE_MAX` entries, which bounds memory without an
+ * eviction policy. CIMD (URL) client ids resolve to null without any lookup (`lookupClientName`).
+ */
+const CLIENT_NAME_TTL_MS = 5 * 60 * 1000;
+const CLIENT_NAME_CACHE_MAX = 1000;
+const clientNameCache: ClientNameCache = new Map();
+const clientNameExpiry = new Map<string, number>();
+
+async function resolveClientName(api: OAuthHelpers | undefined, clientId: string | undefined): Promise<string | null> {
+  if (!api || !clientId) return null;
+  const now = Date.now();
+  const expires = clientNameExpiry.get(clientId);
+  if (expires !== undefined && expires <= now) {
+    clientNameCache.delete(clientId);
+    clientNameExpiry.delete(clientId);
+  }
+  if (clientNameCache.size >= CLIENT_NAME_CACHE_MAX && !clientNameCache.has(clientId)) {
+    clientNameCache.clear();
+    clientNameExpiry.clear();
+  }
+  if (!clientNameCache.has(clientId)) clientNameExpiry.set(clientId, now + CLIENT_NAME_TTL_MS);
+  return lookupClientName(api, clientNameCache, clientId);
+}
+
 /** API handler for `/mcp` on the MCP hostname. Only reached with a valid bearer token (TDD 5.2). */
 const apiHandler = {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
@@ -119,6 +149,8 @@ const apiHandler = {
     if (await isUserRateLimited(env, userId)) {
       return Response.json({ error: "Too many requests" }, { status: 429 });
     }
+    // Registered client_name for the audit "via" badge; the library sets env.OAUTH_PROVIDER here.
+    const clientName = await resolveClientName(env.OAUTH_PROVIDER, c.auth.clientId);
     const authInfo = {
       token: "", // never carry the bearer token into the MCP layer or its logs
       clientId: c.auth.clientId ?? "",
@@ -127,6 +159,7 @@ const apiHandler = {
         userId,
         channel: "mcp_oauth",
         clientId: c.auth.clientId ?? null,
+        clientName,
         requestId: requestIdFrom(request.headers.get("cf-ray")),
       },
     };

@@ -5,7 +5,6 @@ import {
   AuditListQuerySchema,
   AuditPageSchema,
   EntityTypeSchema,
-  type AuditPageResponse,
 } from "../schemas/audit";
 import { listEntityEvents, listTripEvents } from "../services/audit";
 
@@ -51,7 +50,7 @@ app.openapi(
   async (c) => {
     const { tripId } = c.req.valid("param");
     const page = await listTripEvents(getDb(c.env.DB), c.get("user"), tripId, c.req.valid("query"));
-    return c.json(page as AuditPageResponse, 200);
+    return c.json(page, 200);
   }
 );
 
@@ -84,7 +83,7 @@ app.openapi(
       entityId,
       c.req.valid("query")
     );
-    return c.json(page as AuditPageResponse, 200);
+    return c.json(page, 200);
   }
 );
 

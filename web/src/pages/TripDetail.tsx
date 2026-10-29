@@ -1,21 +1,71 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, History } from "lucide-react";
 import {
   trips as tripsApi,
   participants as participantsApi,
   itineraries as itinerariesApi,
   invitesApi,
   usersApi,
+  audit as auditApi,
   type Invite,
   type UserSummary,
 } from "../lib/api";
-import type { Trip, Participant, Itinerary } from "../lib/types";
+import type { Trip, Participant, Itinerary, AuditEntityType, AuditPage } from "../lib/types";
 import { formatDateRange } from "../lib/format";
 import { useAuth } from "../lib/auth";
 import { ItineraryTimeline } from "../components/ItineraryTimeline";
 import { EditTripModal } from "../components/EditTripModal";
 import { ItineraryForm } from "../components/ItineraryForm";
+import { ActivityFeed } from "../components/ActivityFeed";
+import { HistoryModal } from "../components/HistoryModal";
+
+// Activity filter: entity types that live under a trip (specs/AUDIT_TDD.md 9.3).
+const TRIP_ENTITY_TYPES: Array<{ value: AuditEntityType; label: string }> = [
+  { value: "trip", label: "Trip" },
+  { value: "itinerary", label: "Itinerary item" },
+  { value: "expense", label: "Expense" },
+  { value: "participant", label: "Participant" },
+  { value: "document", label: "Document" },
+  { value: "invite", label: "Invite" },
+];
+
+const EMPTY_AUDIT_PAGE: AuditPage = { events: [], nextCursor: null };
+
+// Per-item history target; the modal title is the item's label.
+interface HistoryTarget {
+  entityType: "itinerary" | "participant";
+  id: string;
+  title: string;
+}
+
+// Short label for an itinerary item, used as the history modal title and in the
+// item history list. Mirrors the titles ItineraryTimeline derives, kept minimal.
+function itineraryLabel(item: Itinerary): string {
+  const c = item.content as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  switch (item.type) {
+    case "Flight": {
+      const legs = Array.isArray(c.legs) ? (c.legs as Array<Record<string, unknown>>) : [];
+      const first = legs[0] ?? {};
+      return `${s(first.airline)} ${s(first.flightNumber)}`.trim() || "Flight";
+    }
+    case "Lodging":
+      return s(c.name) || "Lodging";
+    case "Rail":
+      return `${s(c.trainOperator)} ${s(c.trainNumber)}`.trim() || "Rail";
+    case "Car":
+      return s(c.rentalCompany) || "Car";
+    case "Restaurant":
+      return s(c.restaurantName) || "Restaurant";
+    case "Transport":
+      return s(c.operator) || "Transport";
+    case "Activity":
+      return s(c.name) || "Activity";
+    default:
+      return item.type;
+  }
+}
 
 export function TripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -46,6 +96,50 @@ export function TripDetail() {
   const [inviteSendingForParticipant, setInviteSendingForParticipant] = useState<Record<string, boolean>>({});
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
+  // Activity section (specs/AUDIT_TDD.md 9.3): collapsed by default so nothing is
+  // fetched until an Editor or Owner opens it.
+  const [showActivity, setShowActivity] = useState(false);
+  const [activityActor, setActivityActor] = useState("");
+  const [activityEntityType, setActivityEntityType] = useState<"" | AuditEntityType>("");
+  const [activitySinceDate, setActivitySinceDate] = useState("");
+  const [activityUntilDate, setActivityUntilDate] = useState("");
+  const [historyTarget, setHistoryTarget] = useState<HistoryTarget | null>(null);
+  // Bumped whenever the page's data state changes (every write handler sets one of these
+  // after its API call), so an open Activity feed reloads and shows the new event at the top.
+  const [activityVersion, setActivityVersion] = useState(0);
+  useEffect(() => {
+    setActivityVersion((v) => v + 1);
+  }, [trip, items, participants, pendingInvites]);
+
+  // Trip feed loader. ActivityFeed reloads whenever this identity changes, so it is
+  // keyed on the filter state and on activityVersion.
+  const loadActivity = useCallback(
+    (cursor: string | null) => {
+      if (!tripId) return Promise.resolve(EMPTY_AUDIT_PAGE);
+      return auditApi.trip(tripId, {
+        cursor: cursor ?? undefined,
+        actorUserId: activityActor || undefined,
+        entityType: activityEntityType || undefined,
+        since: activitySinceDate ? `${activitySinceDate}T00:00:00.000Z` : undefined,
+        until: activityUntilDate ? `${activityUntilDate}T23:59:59.999Z` : undefined,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activityVersion is a reload trigger
+    [tripId, activityActor, activityEntityType, activitySinceDate, activityUntilDate, activityVersion]
+  );
+
+  // Per-item loader for HistoryModal; changes identity with the selected item.
+  const loadHistory = useCallback(
+    (cursor: string | null) => {
+      if (!tripId || !historyTarget) return Promise.resolve(EMPTY_AUDIT_PAGE);
+      return auditApi.entity(tripId, historyTarget.entityType, historyTarget.id, {
+        cursor: cursor ?? undefined,
+      });
+    },
+    [tripId, historyTarget]
+  );
+  const closeHistory = useCallback(() => setHistoryTarget(null), []);
+
   const copyInviteLink = (id: string, link: string) => {
     navigator.clipboard.writeText(link);
     setCopiedInviteId(id);
@@ -65,8 +159,8 @@ export function TripDetail() {
       setParticipants(p);
       setItems(i);
       setPendingInvites(inv.filter((x) => x.status === "pending"));
-    } catch (err: any) {
-      setError(err.message || "Failed to load trip");
+    } catch (err: unknown) {
+      setError(err instanceof Error && err.message ? err.message : "Failed to load trip");
     } finally {
       setLoading(false);
     }
@@ -86,6 +180,12 @@ export function TripDetail() {
   const canManageParticipants =
     user?.role === "admin" ||
     tripRole === "Owner";
+  // Audit history is for Editors and Owners only (global admins count as Owner).
+  // Same derivation as the edit controls; the API enforces the rule independently.
+  const canViewHistory = canEdit;
+  const activityPeople = participants.filter(
+    (p): p is Participant & { userId: string } => p.userId !== null
+  );
 
   if (loading) {
     return <p className="py-20 text-center text-gray-400">Loading...</p>;
@@ -222,8 +322,8 @@ export function TripDetail() {
                   setPendingInvites([...pendingInvites, inv]);
                   setInviteName("");
                 }
-              } catch (err: any) {
-                setInviteError(err.message);
+              } catch (err: unknown) {
+                setInviteError(err instanceof Error ? err.message : "Failed to create invite");
               } finally {
                 setInviteSending(false);
               }
@@ -332,6 +432,17 @@ export function TripDetail() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      {canViewHistory && (
+                        <button
+                          type="button"
+                          onClick={() => setHistoryTarget({ entityType: "participant", id: p.id, title: `History: ${p.name}` })}
+                          className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600"
+                          title="History"
+                          aria-label={`History for ${p.name}`}
+                        >
+                          <History className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      )}
                       {canManageParticipants ? (
                         <>
                           {!hasAccount && (
@@ -484,8 +595,78 @@ export function TripDetail() {
           await itinerariesApi.delete(trip.id, item.id);
           setItems(items.filter((i) => i.id !== item.id));
         } : undefined}
+        onHistory={canViewHistory ? (item) => setHistoryTarget({ entityType: "itinerary", id: item.id, title: `History: ${itineraryLabel(item)}` }) : undefined}
         showCost={user?.role === "admin" || tripRole === "Owner" || tripRole === "Editor"}
       />
+
+      {/* Activity (Editors and Owners only; Viewers never see this section) */}
+      {canViewHistory && (
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowActivity((v) => !v)}
+              className="flex items-center gap-1 text-sm font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700"
+            >
+              Activity
+              {showActivity ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          {showActivity && (
+            <div>
+              <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                <label className="flex flex-col gap-1 text-xs text-gray-500">
+                  Person
+                  <select
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-accent focus:outline-none"
+                    value={activityActor}
+                    onChange={(e) => setActivityActor(e.target.value)}
+                  >
+                    <option value="">Anyone</option>
+                    {activityPeople.map((p) => (
+                      <option key={p.id} value={p.userId}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-500">
+                  Item type
+                  <select
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-accent focus:outline-none"
+                    value={activityEntityType}
+                    onChange={(e) => setActivityEntityType(e.target.value as "" | AuditEntityType)}
+                  >
+                    <option value="">All</option>
+                    {TRIP_ENTITY_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-500">
+                  From
+                  <input
+                    type="date"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-accent focus:outline-none"
+                    value={activitySinceDate}
+                    max={activityUntilDate || undefined}
+                    onChange={(e) => setActivitySinceDate(e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-500">
+                  To
+                  <input
+                    type="date"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-accent focus:outline-none"
+                    value={activityUntilDate}
+                    min={activitySinceDate || undefined}
+                    onChange={(e) => setActivityUntilDate(e.target.value)}
+                  />
+                </label>
+              </div>
+              <ActivityFeed load={loadActivity} emptyText="No changes yet" />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modals */}
       {editingTrip && (
@@ -504,6 +685,14 @@ export function TripDetail() {
             setAddingItem(false);
             setEditingItem(null);
           }}
+        />
+      )}
+      {canViewHistory && (
+        <HistoryModal
+          open={historyTarget !== null}
+          onClose={closeHistory}
+          title={historyTarget?.title ?? "History"}
+          load={loadHistory}
         />
       )}
     </div>

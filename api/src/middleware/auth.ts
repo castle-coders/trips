@@ -64,6 +64,7 @@ async function createUserWithEmail(
     role,
     channel: audit.channel ?? "web",
     clientId: null,
+    clientName: null,
     requestId: audit.requestId ?? null,
   };
   await insertUserWithPrimaryEmail(db, actor, { id, email, name, role, now });
@@ -112,6 +113,7 @@ async function authenticateCFAccess(
         role: serviceRows[0].userRole,
         channel: "service_token",
         clientId: serviceRows[0].commonName,
+        clientName: serviceRows[0].commonName,
         requestId,
       };
     }
@@ -121,7 +123,7 @@ async function authenticateCFAccess(
     if (!email) return null;
 
     const user = await findUserByEmail(db, email);
-    return user ? { ...user, channel: "web", clientId: null, requestId } : null;
+    return user ? { ...user, channel: "web", clientId: null, clientName: null, requestId } : null;
   } catch {
     return null;
   }
@@ -133,7 +135,7 @@ async function authenticateDevUser(
   requestId: string | null,
 ): Promise<Actor | null> {
   const user = await findUserByEmail(db, email);
-  return user ? { ...user, channel: "dev", clientId: null, requestId } : null;
+  return user ? { ...user, channel: "dev", clientId: null, clientName: null, requestId } : null;
 }
 
 export const authMiddleware = createMiddleware<Env>(async (c, next) => {
@@ -218,7 +220,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
         const existing = await findUserByEmail(db, email);
         console.log(`[jwt-only] existingUser=${!!existing}`);
         if (existing) {
-          c.set("user", { ...existing, channel: "web", clientId: null, requestId });
+          c.set("user", { ...existing, channel: "web", clientId: null, clientName: null, requestId });
         }
 
         return next();
@@ -240,7 +242,7 @@ export const jwtOnlyMiddleware = createMiddleware<Env>(async (c, next) => {
 
       const existing = await findUserByEmail(db, devEmail);
       if (existing) {
-        c.set("user", { ...existing, channel: "dev", clientId: null, requestId });
+        c.set("user", { ...existing, channel: "dev", clientId: null, clientName: null, requestId });
       }
 
       return next();
