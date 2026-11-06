@@ -30,7 +30,7 @@ A logged-in user needs a quick summary of their travel pipeline in a unified fee
 
 ### 3.4. Itinerary Plan Builder & Editor
 - **Access Control:** `organizer` roles can add or definitively edit chronological plans within the itinerary.
-- **Capabilities:** A unified 'Omni-Form' rendering dynamically based on the polymorphic Type selector (Flight, Lodging, Rail, Car, Restaurant, Transport, Activity). Inputs dynamically display relevant physical properties (e.g., `carrier_operator` vs `property_name`, `check_in_time` vs `departure_time`).
+- **Capabilities:** A unified 'Omni-Form' rendering dynamically based on the polymorphic Type selector (Flight, Lodging, Rail, Car, Restaurant, Transport, Activity, Parking). Inputs dynamically display relevant physical properties (e.g., `carrier_operator` vs `property_name`, `check_in_time` vs `departure_time`).
 - **Network Flow:** Submits payloads strictly to `POST /trips/:id/itineraries` (Creation) and `PUT /trips/:id/itineraries/:itin_id` (Updates).
 
 ## 4. Design Aesthetics & Guidelines

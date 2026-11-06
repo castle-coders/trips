@@ -119,7 +119,7 @@ export const itineraries = sqliteTable("itineraries", {
   tripId: text("trip_id")
     .notNull()
     .references(() => trips.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // Flight, Lodging, Rail, Car, Restaurant, Transport, Activity
+  type: text("type").notNull(), // Flight, Lodging, Rail, Car, Restaurant, Transport, Activity, Parking
   status: text("status").notNull(), // Confirmed, Pending, Cancelled
   schemaVersion: integer("schema_version").notNull().default(1),
   content: text("content", { mode: "json" }).notNull(), // Type-specific JSON document

@@ -171,6 +171,28 @@ describe("groupItinerariesByLocalDate", () => {
     ]);
   });
 
+  it("splits parking into entry and exit entries on their own days with their timezones", () => {
+    const groups = groupItinerariesByLocalDate([
+      {
+        id: "p",
+        type: "Parking",
+        content: {
+          facilityName: "SFO Long Term",
+          entryTime: "2030-07-01T06:00", entryTimeTz: "America/Los_Angeles",
+          exitTime: "2030-07-05T21:30", exitTimeTz: "America/Los_Angeles",
+        },
+      },
+      { id: "q", type: "Parking", content: { facilityName: "No times" } },
+    ]);
+    expect(summary(groups)).toEqual([
+      ["2030-07-01", ["p:Parking-entry"]],
+      ["2030-07-05", ["p:Parking-exit"]],
+      [null, ["q:Parking"]],
+    ]);
+    expect(groups[0].entries[0]).toMatchObject({ time: "2030-07-01T06:00", timeZone: "America/Los_Angeles" });
+    expect(groups[1].entries[0]).toMatchObject({ time: "2030-07-05T21:30", timeZone: "America/Los_Angeles" });
+  });
+
   it("prefers planned arrival/departure over check-in/out for lodging and uses their timezones", () => {
     const [g1, g2] = groupItinerariesByLocalDate([
       {

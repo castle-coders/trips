@@ -105,6 +105,7 @@ All trip content is stored in a single `itineraries` table with type-specific JS
 - **Restaurant** — reservation time, party size
 - **Transport** — buses, ferries, shuttles
 - **Activity** — events with location and time
+- **Parking** — facility with entry and exit times (shown as separate timeline entries), space and license plate
 
 Other tables: `trips`, `participants`, `users`, `expenses`, `documents`, `invites`, `service_identities`, and the append-only `audit_events` (see [Activity history](#activity-history)).
 

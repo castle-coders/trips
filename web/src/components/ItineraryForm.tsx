@@ -9,6 +9,7 @@ const TYPES: ItineraryType[] = [
   "Restaurant",
   "Transport",
   "Activity",
+  "Parking",
 ];
 
 const STATUSES = ["Confirmed", "Pending", "Cancelled"] as const;
@@ -72,6 +73,14 @@ const typeFields: Record<ItineraryType, { key: string; label: string; type?: str
     { key: "startTime", label: "Start Time", type: "datetime-local", required: true },
     { key: "endTime", label: "End Time", type: "datetime-local" },
   ],
+  Parking: [
+    { key: "facilityName", label: "Facility Name", required: true },
+    { key: "address", label: "Address" },
+    { key: "entryTime", label: "Entry Time", type: "datetime-local", required: true },
+    { key: "exitTime", label: "Exit Time", type: "datetime-local", required: true },
+    { key: "spaceNumber", label: "Space / Level" },
+    { key: "licensePlate", label: "License Plate" },
+  ],
 };
 
 // Which extra fields each type supports per-traveler
@@ -83,6 +92,7 @@ const travelerExtras: Record<ItineraryType, string[]> = {
   Lodging: [],
   Restaurant: [],
   Activity: [],
+  Parking: [],
 };
 
 const flightLegFields: { key: string; label: string; type?: string; required?: boolean }[] = [

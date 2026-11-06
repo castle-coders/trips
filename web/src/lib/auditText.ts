@@ -170,6 +170,14 @@ const LEAF_LABELS: Record<string, string> = {
   startTimeTz: "start time zone",
   endTime: "end time",
   endTimeTz: "end time zone",
+  // parking
+  facilityName: "facility",
+  entryTime: "entry time",
+  entryTimeTz: "entry time zone",
+  exitTime: "exit time",
+  exitTimeTz: "exit time zone",
+  spaceNumber: "space",
+  licensePlate: "license plate",
   // expense
   amount: "amount",
   category: "category",

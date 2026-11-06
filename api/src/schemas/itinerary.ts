@@ -137,6 +137,20 @@ const ActivityContent = z
   })
   .openapi("ActivityContent");
 
+const ParkingContent = z
+  .object({
+    facilityName: z.string(),
+    address: z.string().optional(),
+    entryTime: z.string(),
+    entryTimeTz: z.string().optional(),
+    exitTime: z.string(),
+    exitTimeTz: z.string().optional(),
+    spaceNumber: z.string().optional(),
+    licensePlate: z.string().optional(),
+    travelers: z.array(TravelerRef.omit({ ticketNumber: true })).optional(),
+  })
+  .openapi("ParkingContent");
+
 // --- Viewer-safe schemas (no sensitive fields) ---
 
 const TravelerRefView = TravelerRef.omit({ ticketNumber: true });
@@ -192,6 +206,8 @@ const TransportContentView = z
 
 const ActivityContentView = ActivityContent; // already has no ticketNumber
 
+const ParkingContentView = ParkingContent; // already has no ticketNumber
+
 // --- Map type discriminator to content schema ---
 export const ITINERARY_TYPES = [
   "Flight",
@@ -201,6 +217,7 @@ export const ITINERARY_TYPES = [
   "Restaurant",
   "Transport",
   "Activity",
+  "Parking",
 ] as const;
 
 export type ItineraryType = (typeof ITINERARY_TYPES)[number];
@@ -213,6 +230,7 @@ export const contentSchemaByType: Record<ItineraryType, z.ZodType> = {
   Restaurant: RestaurantContent,
   Transport: TransportContent,
   Activity: ActivityContent,
+  Parking: ParkingContent,
 };
 
 export const viewContentSchemaByType: Record<ItineraryType, z.ZodType> = {
@@ -223,6 +241,7 @@ export const viewContentSchemaByType: Record<ItineraryType, z.ZodType> = {
   Restaurant: RestaurantContentView,
   Transport: TransportContentView,
   Activity: ActivityContentView,
+  Parking: ParkingContentView,
 };
 
 const STATUSES = ["Confirmed", "Pending", "Cancelled"] as const;
