@@ -35,6 +35,7 @@ When a user forwards you an email, message, or document containing travel inform
 - Restaurant reservations (name, time, party size)
 - Activities (name, location, times)
 - Transport (bus, ferry, shuttle details)
+- Parking reservations (facility, entry and exit times, space, license plate)
 
 **Workflow for processing a forwarded itinerary:**
 
@@ -155,7 +156,7 @@ PUT    /trips/:tripId/itineraries/:itineraryId       — Update itinerary
 DELETE /trips/:tripId/itineraries/:itineraryId       — Delete itinerary
 ```
 
-**Itinerary types:** `Flight`, `Lodging`, `Rail`, `Car`, `Restaurant`, `Transport`, `Activity`
+**Itinerary types:** `Flight`, `Lodging`, `Rail`, `Car`, `Restaurant`, `Transport`, `Activity`, `Parking`
 
 **Itinerary statuses:** `Confirmed`, `Pending`, `Cancelled`
 
@@ -316,6 +317,25 @@ DELETE /trips/:tripId/itineraries/:itineraryId       — Delete itinerary
   ]
 }
 ```
+
+**Parking:**
+```json
+{
+  "facilityName": "Narita Airport P2 Parking",
+  "address": "Narita International Airport, Narita, Chiba",
+  "entryTime": "2026-04-10T07:30:00",
+  "entryTimeTz": "Asia/Tokyo",
+  "exitTime": "2026-04-18T21:00:00",
+  "exitTimeTz": "Asia/Tokyo",
+  "spaceNumber": "Level 3, B-42",
+  "licensePlate": "品川 300 あ 12-34",
+  "travelers": [
+    { "participantId": "uuid", "name": "Jane Doe" }
+  ]
+}
+```
+
+`facilityName`, `entryTime` and `exitTime` are required. The trip timeline shows parking as two entries, one at entry and one at exit.
 
 ### Participants
 

@@ -51,7 +51,7 @@ Stores references to critical files (boarding passes, tickets).
 All itinerary items below share these tracking fields:
 - `id`: Unique identifier
 - `trip_id`: Reference to trip
-- `type`: Category (Flight, Lodging, Rail, Car, Restaurant, Activity, Transport)
+- `type`: Category (Flight, Lodging, Rail, Car, Restaurant, Activity, Transport, Parking)
 - `status`: Confirmed, Pending, Cancelled
 - `confirmation_number`: Booking reference
 - `booking_agency`: E.g., Expedia
@@ -106,6 +106,11 @@ All itinerary items below share these tracking fields:
 ### 3.12 Activity / Generic Plan
 - `name`, `location`, `start_time`, `end_time`
 - `travelers`: Array of participants attending this activity (`participant_id`, `name`)
+
+### 3.13 Parking
+- `facility_name`, `address`, `entry_time`, `exit_time`, `space_number`, `license_plate`
+- `travelers`: Array of participants using this parking (`participant_id`, `name`)
+- The timeline shows entry and exit as separate entries.
 
 ## 4. API Endpoints
 
