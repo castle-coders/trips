@@ -215,7 +215,7 @@ server.registerTool(
   "create_itinerary",
   {
     title: "Create itinerary item",
-    description: "Add a flight, lodging, rail, car, restaurant, transport or activity item to a trip. "
+    description: "Add a flight, lodging, rail, car, restaurant, transport, activity or parking item to a trip. "
       + "Requires edit access to the trip. Content must match the item type.",
     inputSchema: z.object({ tripId: z.string().uuid() }).extend(CreateItinerarySchema.shape),
     outputSchema: ItinerarySchema,
@@ -253,7 +253,7 @@ The `.openapi()` metadata on the existing Zod schemas is harmless for MCP, and t
 | `update_itinerary` | write | `updateItinerary` | false |
 | `add_expense` | write | `createExpense` | false |
 
-`get_trip` grouping: for each itinerary, derive the grouping date from the type's primary time field (flight first-leg departure, lodging check-in, restaurant reservation time, and so on) in its stored timezone when present. This mirrors the timeline logic in the web app; the mapping lives in the service so both stay aligned.
+`get_trip` grouping: for each itinerary, derive the grouping date from the type's primary time field (flight first-leg departure, lodging check-in and check-out, parking entry and exit, restaurant reservation time, and so on) in its stored timezone when present. This mirrors the timeline logic in the web app; the mapping lives in the service so both stay aligned.
 
 ## 7. OAuth Authorization Server (Stage 2)
 
