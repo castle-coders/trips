@@ -62,6 +62,8 @@ function itineraryLabel(item: Itinerary): string {
       return s(c.operator) || "Transport";
     case "Activity":
       return s(c.name) || "Activity";
+    case "Parking":
+      return s(c.facilityName) || "Parking";
     default:
       return item.type;
   }

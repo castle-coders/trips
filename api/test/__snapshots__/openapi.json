@@ -788,7 +788,8 @@
               "Car",
               "Restaurant",
               "Transport",
-              "Activity"
+              "Activity",
+              "Parking"
             ]
           },
           "status": {
@@ -858,7 +859,8 @@
               "Car",
               "Restaurant",
               "Transport",
-              "Activity"
+              "Activity",
+              "Parking"
             ]
           },
           "status": {
@@ -908,7 +910,8 @@
               "Car",
               "Restaurant",
               "Transport",
-              "Activity"
+              "Activity",
+              "Parking"
             ]
           },
           "status": {

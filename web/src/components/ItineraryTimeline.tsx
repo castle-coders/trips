@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Itinerary } from "../lib/types";
-import { Plane, Bed, TrainFront, Car, Utensils, Bus, MapPin, Map as MapIcon, History } from "lucide-react";
+import { Plane, Bed, TrainFront, Car, Utensils, Bus, MapPin, Map as MapIcon, History, SquareParking } from "lucide-react";
 
 const getTypeIcon = (type: string) => {
   const props = { className: "w-3 h-3" };
@@ -12,6 +12,7 @@ const getTypeIcon = (type: string) => {
     case "Restaurant": return <Utensils {...props} />;
     case "Transport": return <Bus {...props} />;
     case "Activity": return <MapPin {...props} />;
+    case "Parking": case "Parking-entry": case "Parking-exit": return <SquareParking {...props} />;
     default: return <MapIcon {...props} />;
   }
 };
@@ -26,6 +27,9 @@ const typeColors: Record<string, string> = {
   Restaurant: "bg-red-100 text-red-700",
   Transport: "bg-yellow-100 text-yellow-700",
   Activity: "bg-pink-100 text-pink-700",
+  Parking: "bg-sky-100 text-sky-700",
+  "Parking-entry": "bg-sky-100 text-sky-700",
+  "Parking-exit": "bg-sky-100 text-sky-700",
 };
 
 const statusStyles: Record<string, string> = {
@@ -157,6 +161,42 @@ function buildEntries(items: Itinerary[]): TimelineEntry[] {
           timeLabel: "",
           sortTime: Infinity,
         });
+      }
+      continue;
+    }
+
+    // Parking: separate entry and exit timeline entries (a stay can span days)
+    if (item.type === "Parking") {
+      const name = c.facilityName || "Parking";
+      const details = [c.spaceNumber, c.licensePlate].filter(Boolean).join(" · ");
+      const subtitle = details || undefined;
+      let pushed = false;
+      if (c.entryTime) {
+        entries.push({
+          key: `${item.id}-entry`,
+          item,
+          displayType: "Parking-entry",
+          title: `${name} — Entry`,
+          timeLabel: formatTime(c.entryTime, c.entryTimeTz || undefined),
+          secondaryTimeLabel: subtitle,
+          sortTime: new Date(wallClockToUTC(c.entryTime)).getTime(),
+        });
+        pushed = true;
+      }
+      if (c.exitTime) {
+        entries.push({
+          key: `${item.id}-exit`,
+          item,
+          displayType: "Parking-exit",
+          title: `${name} — Exit`,
+          timeLabel: formatTime(c.exitTime, c.exitTimeTz || undefined),
+          secondaryTimeLabel: subtitle,
+          sortTime: new Date(wallClockToUTC(c.exitTime)).getTime(),
+        });
+        pushed = true;
+      }
+      if (!pushed) {
+        entries.push({ key: item.id, item, displayType: "Parking", title: name, timeLabel: "", sortTime: Infinity });
       }
       continue;
     }
@@ -320,6 +360,8 @@ export function ItineraryTimeline({
         const colorKey = entry.displayType;
         const badgeLabel = entry.displayType.startsWith("Lodging")
           ? "Lodging"
+          : entry.displayType.startsWith("Parking")
+          ? "Parking"
           : entry.displayType;
         return (
           <div key={entry.key} className="relative flex gap-4 pl-12">
@@ -397,7 +439,7 @@ export function ItineraryTimeline({
               {(() => {
                 const c = entry.item.content as Record<string, unknown>;
                 const address =
-                  (entry.item.type === "Lodging" || entry.item.type === "Restaurant")
+                  (entry.item.type === "Lodging" || entry.item.type === "Restaurant" || entry.item.type === "Parking")
                     ? (c.address as string | undefined)
                     : entry.item.type === "Activity"
                     ? (c.location as string | undefined)

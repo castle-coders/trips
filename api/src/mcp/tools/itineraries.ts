@@ -134,7 +134,7 @@ export function registerItineraryTools(server: McpServer, rc: McpRequestContext)
     {
       title: "Search itineraries",
       description:
-        "Search itineraries (flights, lodging, rail, car, restaurant, transport, activity) across the trips you belong to, or within one trip. " +
+        "Search itineraries (flights, lodging, rail, car, restaurant, transport, activity, parking) across the trips you belong to, or within one trip. " +
         "All filters are optional and combined with AND. Results are ordered by earliest scheduled time, unscheduled last, and capped by `limit`. " +
         "Very broad searches are also capped server-side (1000 rows); narrow with tripId, types or dates. " +
         "Viewers of a trip do not see confirmation or ticket numbers. Requires scope trips:read; works for any trip role (Viewer or higher).",
@@ -189,7 +189,7 @@ export function registerItineraryTools(server: McpServer, rc: McpRequestContext)
     {
       title: "Create itinerary item",
       description:
-        "Add an itinerary item (flight, lodging, rail, car, restaurant, transport or activity) to a trip. " +
+        "Add an itinerary item (flight, lodging, rail, car, restaurant, transport, activity or parking) to a trip. " +
         "Needs the trip id, a type and a matching content object. Each call creates a new item, so do not retry blindly. " +
         "Requires scope trips:write and Editor or Owner role on the trip.",
       inputSchema: createInput,

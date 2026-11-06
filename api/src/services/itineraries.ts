@@ -268,7 +268,12 @@ export async function deleteItinerary(db: Db, actor: Actor, tripId: string, itin
 // ---------------------------------------------------------------------------
 
 /** Timeline entry kinds, matching the web timeline's displayType values. */
-export type TimelineEntryKind = ItineraryType | "Lodging-arrival" | "Lodging-departure";
+export type TimelineEntryKind =
+  | ItineraryType
+  | "Lodging-arrival"
+  | "Lodging-departure"
+  | "Parking-entry"
+  | "Parking-exit";
 
 export interface TimelineEntry<T> {
   itinerary: T;
@@ -341,6 +346,16 @@ function entriesFor<T extends { type: string; content: unknown }>(item: T): Time
     return out;
   }
 
+  if (item.type === "Parking") {
+    const out: TimedEntry<T>[] = [];
+    const entryTime = str(c.entryTime);
+    const exitTime = str(c.exitTime);
+    if (entryTime) out.push(entry(item, "Parking-entry", entryTime, str(c.entryTimeTz)));
+    if (exitTime) out.push(entry(item, "Parking-exit", exitTime, str(c.exitTimeTz)));
+    if (!out.length) out.push(entry(item, "Parking", undefined, undefined));
+    return out;
+  }
+
   if (item.type === "Flight") {
     const legs = Array.isArray(c.legs) ? (c.legs as Array<Record<string, unknown>>) : [];
     // The web timeline renders nothing for a flight without legs; keep it visible as Unscheduled.
@@ -365,7 +380,7 @@ function entriesFor<T extends { type: string; content: unknown }>(item: T): Time
 /**
  * Group itineraries into days the way the web timeline does: each itinerary yields one entry per
  * flight leg (by departure), two for lodging (check-in / check-out, preferring planned
- * arrival/departure times), and one for other types (first of departureTime, pickUpTime,
+ * arrival/departure times), two for parking (entry / exit), and one for other types (first of departureTime, pickUpTime,
  * reservationTime, startTime). An entry's day is the calendar date of its stored wall-clock time,
  * i.e. local to its stored timezone. Entries with no parseable time go in a final group with
  * date null. Groups are ordered by date ascending; entries within a group by time, stable.

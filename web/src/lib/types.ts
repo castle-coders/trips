@@ -29,7 +29,8 @@ export type ItineraryType =
   | "Car"
   | "Restaurant"
   | "Transport"
-  | "Activity";
+  | "Activity"
+  | "Parking";
 
 export interface Itinerary {
   id: string;

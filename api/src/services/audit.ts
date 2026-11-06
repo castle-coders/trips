@@ -187,6 +187,9 @@ function itineraryLabel(snapshot: Snapshot): string | null {
     } else if (type === "Lodging") {
       const name = str(content.propertyName);
       if (name !== null) return name;
+    } else if (type === "Parking") {
+      const name = str(content.facilityName);
+      if (name !== null) return name;
     } else {
       const name = firstString(content, ["name", "title", "vendor"]);
       if (name !== null) return name;

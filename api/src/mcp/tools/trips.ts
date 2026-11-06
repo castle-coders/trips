@@ -31,7 +31,7 @@ const participantOut = z.object({
 
 const entryOut = z.object({
   itineraryId: z.string().describe("Id of an item in the itineraries array"),
-  kind: z.string().describe("Timeline kind, e.g. Flight, Lodging-arrival, Lodging-departure, Activity"),
+  kind: z.string().describe("Timeline kind, e.g. Flight, Lodging-arrival, Lodging-departure, Parking-entry, Parking-exit, Activity"),
   legIndex: z.number().optional().describe("Flight leg index, for Flight entries that come from a leg"),
   time: z.string().nullable().describe("Stored local wall-clock time the entry is placed by, or null"),
   timeZone: z.string().nullable().describe("IANA timezone of that time, or null"),
